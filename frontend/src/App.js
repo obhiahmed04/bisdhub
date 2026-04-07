@@ -5,6 +5,8 @@ import LoginPage from './pages/LoginPage';
 import RegistrationPage from './pages/RegistrationPage';
 import MainApp from './pages/MainApp';
 import AdminDashboard from './pages/AdminDashboard';
+import ModerationPanel from './pages/ModerationPanel';
+import ManagementPanel from './pages/ManagementPanel';
 import UserProfile from './pages/UserProfile';
 import { Toaster } from './components/ui/sonner';
 
@@ -34,6 +36,8 @@ function App() {
           <Route path="/register" element={<RegistrationPage />} />
           <Route path="/" element={token ? <MainApp user={user} onLogout={logout} /> : <Navigate to="/login" />} />
           <Route path="/admin" element={token && user?.is_admin ? <AdminDashboard user={user} onLogout={logout} /> : <Navigate to="/" />} />
+          <Route path="/moderation" element={token && user?.is_moderator ? <ModerationPanel user={user} onLogout={logout} /> : <Navigate to="/" />} />
+          <Route path="/management" element={token && (user?.role === 'Project Owner' || user?.role === 'Management') ? <ManagementPanel user={user} onLogout={logout} /> : <Navigate to="/" />} />
           <Route path="/profile/:idNumber" element={token ? <UserProfile user={user} onLogout={logout} /> : <Navigate to="/login" />} />
         </Routes>
       </BrowserRouter>

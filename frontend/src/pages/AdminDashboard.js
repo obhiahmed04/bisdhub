@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -6,7 +6,7 @@ import { Textarea } from '../components/ui/textarea';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { SignOut, CheckCircle, XCircle } from '@phosphor-icons/react';
+import { SignOut, CheckCircle, XCircle, ChatCircle, PaperPlaneRight } from '@phosphor-icons/react';
 import api from '../utils/api';
 
 const AdminDashboard = ({ user, onLogout }) => {
@@ -15,12 +15,28 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [selectedReg, setSelectedReg] = useState(null);
   const [password, setPassword] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [helpChats, setHelpChats] = useState([]);
+  const [activeHelpChat, setActiveHelpChat] = useState(null);
+  const [helpMessages, setHelpMessages] = useState([]);
+  const [newHelpMessage, setNewHelpMessage] = useState('');
+  const chatEndRef = useRef(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadPendingRegistrations();
     loadAllUsers();
+    loadHelpChats();
   }, []);
+
+  useEffect(() => {
+    if (activeHelpChat) {
+      loadHelpMessages();
+    }
+  }, [activeHelpChat]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [helpMessages]);
 
   const loadPendingRegistrations = async () => {
     try {
@@ -37,6 +53,41 @@ const AdminDashboard = ({ user, onLogout }) => {
       setAllUsers(response.data);
     } catch (error) {
       toast.error('Failed to load users');
+    }
+  };
+
+  const loadHelpChats = async () => {
+    try {
+      const response = await api.get('/admin/help-chats');
+      setHelpChats(response.data);
+    } catch (error) {
+      console.error('Failed to load help chats');
+    }
+  };
+
+  const loadHelpMessages = async () => {
+    try {
+      const response = await api.get(`/help-chat/${activeHelpChat}/messages`);
+      setHelpMessages(response.data);
+    } catch (error) {
+      toast.error('Failed to load messages');
+    }
+  };
+
+  const sendHelpMessage = async () => {
+    if (!newHelpMessage.trim()) return;
+
+    try {
+      await api.post(`/help-chat/${activeHelpChat}/message`, {
+        sender_id: user.user_id,
+        content: newHelpMessage
+      }, {
+        params: { user_type: 'admin' }
+      });
+      setNewHelpMessage('');
+      loadHelpMessages();
+    } catch (error) {
+      toast.error('Failed to send message');
     }
   };
 
@@ -84,27 +135,27 @@ const AdminDashboard = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] p-6">
+    <div className="min-h-screen bg-[#FDFBF7] p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="admin-title">
+            <h1 className="text-3xl md:text-4xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="admin-title">
               Admin Panel
             </h1>
             <p className="text-base font-medium text-[#4B4B4B]">BISD HUB Administration</p>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-2 md:gap-4 mt-4 md:mt-0">
             <Button
               data-testid="admin-back-to-app"
               onClick={() => navigate('/')}
-              className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-6 py-3 rounded-xl"
+              className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-4 md:px-6 py-2 md:py-3 rounded-xl text-sm md:text-base"
             >
               Back to App
             </Button>
             <Button
               data-testid="admin-logout"
               onClick={onLogout}
-              className="bg-white text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-6 py-3 rounded-xl flex items-center gap-2"
+              className="bg-white text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-4 md:px-6 py-2 md:py-3 rounded-xl flex items-center gap-2 text-sm md:text-base"
             >
               <SignOut size={20} weight="bold" />
               Logout
@@ -113,9 +164,10 @@ const AdminDashboard = ({ user, onLogout }) => {
         </div>
 
         <Tabs defaultValue="pending" className="w-full">
-          <TabsList className="bg-white border-2 border-[#111111] rounded-xl p-1 mb-6">
-            <TabsTrigger value="pending" data-testid="admin-tab-pending">Pending Registrations ({pendingRegs.length})</TabsTrigger>
-            <TabsTrigger value="users" data-testid="admin-tab-users">All Users ({allUsers.length})</TabsTrigger>
+          <TabsList className="bg-white border-2 border-[#111111] rounded-xl p-1 mb-6 flex flex-wrap">
+            <TabsTrigger value="pending" data-testid="admin-tab-pending">Pending ({pendingRegs.length})</TabsTrigger>
+            <TabsTrigger value="users" data-testid="admin-tab-users">Users ({allUsers.length})</TabsTrigger>
+            <TabsTrigger value="help" data-testid="admin-tab-help">Help Chat ({helpChats.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="pending">
@@ -239,6 +291,95 @@ const AdminDashboard = ({ user, onLogout }) => {
                   </tbody>
                 </table>
               </ScrollArea>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="help">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Help Chat List */}
+              <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4">
+                <h3 className="text-lg font-black mb-4 flex items-center gap-2" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                  <ChatCircle size={24} weight="bold" />
+                  Rejected Users
+                </h3>
+                <ScrollArea className="h-[500px]">
+                  <div className="space-y-2">
+                    {helpChats.map((chat) => (
+                      <div
+                        key={chat.registration.reg_id}
+                        onClick={() => setActiveHelpChat(chat.registration.reg_id)}
+                        className={`p-3 rounded-xl border-2 border-[#111111] cursor-pointer hover:bg-[#A7F3D0] ${
+                          activeHelpChat === chat.registration.reg_id ? 'bg-[#2563EB] text-white' : 'bg-white'
+                        }`}
+                      >
+                        <p className="font-bold text-sm">{chat.registration.full_name}</p>
+                        <p className={`text-xs ${activeHelpChat === chat.registration.reg_id ? 'text-white opacity-75' : 'text-[#4B4B4B]'}`}>
+                          @{chat.registration.id_number}
+                        </p>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white mt-1">
+                          {chat.message_count} messages
+                        </span>
+                      </div>
+                    ))}
+
+                    {helpChats.length === 0 && (
+                      <p className="text-sm text-[#4B4B4B] text-center py-8">No help requests</p>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {/* Chat Interface */}
+              <div className="md:col-span-2">
+                {activeHelpChat ? (
+                  <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-6 flex flex-col h-[600px]">
+                    <h3 className="text-lg font-black mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Help Chat</h3>
+                    
+                    <ScrollArea className="flex-1 mb-4">
+                      <div className="space-y-4">
+                        {helpMessages.map((msg) => (
+                          <div key={msg.message_id} className={`flex ${msg.sender_type === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[70%] ${
+                              msg.sender_type === 'admin'
+                                ? 'bg-[#E6F4EA] border-2 border-[#111111] rounded-2xl rounded-tr-none px-4 py-3'
+                                : 'bg-white border-2 border-[#111111] rounded-2xl rounded-tl-none px-4 py-3'
+                            }`}>
+                              <p className="text-xs font-bold text-[#4B4B4B] mb-1">
+                                {msg.sender_type === 'admin' ? 'You (Admin)' : 'User'}
+                              </p>
+                              <p className="text-base">{msg.content}</p>
+                              <p className="text-xs text-[#4B4B4B] mt-1">
+                                {new Date(msg.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                        <div ref={chatEndRef} />
+                      </div>
+                    </ScrollArea>
+
+                    <div className="flex gap-2">
+                      <Input
+                        value={newHelpMessage}
+                        onChange={(e) => setNewHelpMessage(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && sendHelpMessage()}
+                        placeholder="Type a message..."
+                        className="border-2 border-[#111111] rounded-xl px-4 py-3 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]"
+                      />
+                      <Button
+                        onClick={sendHelpMessage}
+                        className="bg-[#2563EB] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-6 rounded-xl"
+                      >
+                        <PaperPlaneRight size={20} weight="bold" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-12 text-center h-[600px] flex items-center justify-center">
+                    <p className="text-lg font-medium text-[#4B4B4B]">Select a user to view help chat</p>
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

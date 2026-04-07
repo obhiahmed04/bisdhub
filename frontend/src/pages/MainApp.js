@@ -9,10 +9,11 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { toast } from 'sonner';
 import { 
   House, ChatCircleDots, PaperPlaneTilt, User, MagnifyingGlass, 
-  SignOut, Heart, ChatCircle, UsersThree, PaperPlaneRight 
+  SignOut, Heart, ChatCircle, UsersThree, PaperPlaneRight, Flag, ShieldCheck, Crown
 } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
+import NotificationBell from '../components/NotificationBell';
 
 const MainApp = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('home');
@@ -131,6 +132,18 @@ const MainApp = ({ user, onLogout }) => {
     }
   };
 
+  const reportPost = async (postId) => {
+    const reason = prompt('Please enter the reason for reporting this post:');
+    if (!reason) return;
+
+    try {
+      await api.post(`/mod/posts/${postId}/report`, { reason });
+      toast.success('Post reported successfully');
+    } catch (error) {
+      toast.error('Failed to report post');
+    }
+  };
+
   const searchContent = async () => {
     if (!searchQuery.trim()) return;
 
@@ -224,12 +237,15 @@ const MainApp = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="flex h-screen bg-[#FDFBF7]">
+    <div className="flex flex-col md:flex-row h-screen bg-[#FDFBF7]">
       {/* Left Sidebar - Navigation */}
-      <div className="w-64 bg-white border-r-2 border-[#111111] p-4 flex flex-col">
-        <h1 className="text-2xl font-black mb-8" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="app-logo">
-          BISD HUB
-        </h1>
+      <div className="hidden md:flex md:w-64 bg-white border-r-2 border-[#111111] p-4 flex-col">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl font-black" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="app-logo">
+            BISD HUB
+          </h1>
+          <NotificationBell user={user} ws={ws} />
+        </div>
 
         <nav className="flex-1 space-y-2">
           <button
@@ -237,9 +253,9 @@ const MainApp = ({ user, onLogout }) => {
             onClick={() => setActiveTab('home')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] ${
               activeTab === 'home' ? 'bg-[#2563EB] text-white' : 'bg-white text-[#111111]'
-            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]`}
+            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm`}
           >
-            <House size={24} weight="bold" />
+            <House size={20} weight="bold" />
             Home
           </button>
 
@@ -248,9 +264,9 @@ const MainApp = ({ user, onLogout }) => {
             onClick={() => setActiveTab('chat')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] ${
               activeTab === 'chat' ? 'bg-[#2563EB] text-white' : 'bg-white text-[#111111]'
-            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]`}
+            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm`}
           >
-            <ChatCircleDots size={24} weight="bold" />
+            <ChatCircleDots size={20} weight="bold" />
             Global Chat
           </button>
 
@@ -259,28 +275,51 @@ const MainApp = ({ user, onLogout }) => {
             onClick={() => setActiveTab('dm')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] ${
               activeTab === 'dm' ? 'bg-[#2563EB] text-white' : 'bg-white text-[#111111]'
-            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]`}
+            } shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm`}
           >
-            <PaperPlaneTilt size={24} weight="bold" />
+            <PaperPlaneTilt size={20} weight="bold" />
             DMs
           </button>
 
           <button
             data-testid="nav-profile"
             onClick={() => navigate(`/profile/${user.id_number}`)}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
           >
-            <User size={24} weight="bold" />
+            <User size={20} weight="bold" />
             Profile
           </button>
+
+          {/* Panel Access Buttons */}
+          {(user.role === 'Project Owner' || user.role === 'Management') && (
+            <button
+              data-testid="nav-management"
+              onClick={() => navigate('/management')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
+            >
+              <Crown size={20} weight="bold" />
+              Management
+            </button>
+          )}
 
           {user.is_admin && (
             <button
               data-testid="nav-admin"
               onClick={() => navigate('/admin')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]"
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-[#A7F3D0] text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
             >
               Admin Panel
+            </button>
+          )}
+
+          {user.is_moderator && (
+            <button
+              data-testid="nav-moderation"
+              onClick={() => navigate('/moderation')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-[#2563EB] text-white shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
+            >
+              <ShieldCheck size={20} weight="bold" />
+              Moderation
             </button>
           )}
         </nav>
@@ -288,16 +327,31 @@ const MainApp = ({ user, onLogout }) => {
         <button
           data-testid="logout-button"
           onClick={onLogout}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl font-bold border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
         >
-          <SignOut size={24} weight="bold" />
+          <SignOut size={20} weight="bold" />
           Logout
         </button>
       </div>
 
+      {/* Mobile Header */}
+      <div className="md:hidden bg-white border-b-2 border-[#111111] p-4 flex items-center justify-between">
+        <h1 className="text-xl font-black" style={{ fontFamily: 'Outfit, sans-serif' }}>
+          BISD HUB
+        </h1>
+        <div className="flex gap-2">
+          <NotificationBell user={user} ws={ws} />
+          <button
+            onClick={onLogout}
+            className="bg-white text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold p-2 rounded-xl"
+          >
+            <SignOut size={20} weight="bold" />
+          </button>
+        </div>
+      </div>
+
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {activeTab === 'home' && (
+      <div className="flex-1 flex flex-col overflow-hidden">{activeTab === 'home' && (
           <div className="flex-1 overflow-hidden flex">
             <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-6">
               {/* Create Post */}
@@ -355,15 +409,24 @@ const MainApp = ({ user, onLogout }) => {
                         <button
                           data-testid={`like-post-${post.post_id}`}
                           onClick={() => likePost(post.post_id, post.likes?.includes(user.user_id))}
-                          className="flex items-center gap-2 text-[#111111] hover:text-[#FF6B6B] font-medium"
+                          className="flex items-center gap-2 text-[#111111] hover:text-[#FF6B6B] font-medium text-sm"
                         >
                           <Heart size={20} weight={post.likes?.includes(user.user_id) ? 'fill' : 'bold'} />
                           {post.likes?.length || 0}
                         </button>
-                        <button className="flex items-center gap-2 text-[#111111] hover:text-[#2563EB] font-medium">
+                        <button className="flex items-center gap-2 text-[#111111] hover:text-[#2563EB] font-medium text-sm">
                           <ChatCircle size={20} weight="bold" />
                           {post.comments?.length || 0}
                         </button>
+                        {post.user?.user_id !== user.user_id && (
+                          <button
+                            onClick={() => reportPost(post.post_id)}
+                            className="flex items-center gap-2 text-[#111111] hover:text-[#FF6B6B] font-medium text-sm ml-auto"
+                          >
+                            <Flag size={18} weight="bold" />
+                            Report
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
