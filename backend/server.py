@@ -142,9 +142,11 @@ class User(BaseModel):
 class Post(BaseModel):
     model_config = ConfigDict(extra="ignore")
     post_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    serial_number: Optional[int] = None
     user_id: str
     content: str
     images: List[str] = Field(default_factory=list)
+    visibility: str = "public"  # public, profile_only, official
     likes: List[str] = Field(default_factory=list)
     comments: List[Dict[str, Any]] = Field(default_factory=list)
     is_official: bool = False
@@ -179,10 +181,14 @@ class ProfileUpdate(BaseModel):
     profile_picture: Optional[str] = None
     banner_image: Optional[str] = None
     is_profile_public: Optional[bool] = None
+    is_followers_public: Optional[bool] = None
+    is_following_public: Optional[bool] = None
+    display_name_format: Optional[str] = None  # full, first_last, first_only
 
 class PostCreate(BaseModel):
     content: str
     images: List[str] = Field(default_factory=list)
+    visibility: str = "public"  # public, profile_only, official
 
 class CommentCreate(BaseModel):
     content: str
@@ -608,14 +614,66 @@ async def unfollow_user(id_number: str, user: User = Depends(get_current_user)):
     
     return {"status": "success", "message": "User unfollowed"}
 
+# Get followers list
+@api_router.get("/users/{id_number}/followers")
+async def get_followers(id_number: str, user: User = Depends(get_current_user)):
+    target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check privacy
+    if not target_user.get('is_followers_public', True) and target_user['user_id'] != user.user_id:
+        raise HTTPException(status_code=403, detail="Followers list is private")
+    
+    followers = []
+    for follower_id in target_user.get('followers', []):
+        follower = await db.users.find_one({"user_id": follower_id}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        if follower:
+            followers.append(follower)
+    
+    return followers
+
+# Get following list
+@api_router.get("/users/{id_number}/following")
+async def get_following(id_number: str, user: User = Depends(get_current_user)):
+    target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check privacy
+    if not target_user.get('is_following_public', True) and target_user['user_id'] != user.user_id:
+        raise HTTPException(status_code=403, detail="Following list is private")
+    
+    following = []
+    for following_id in target_user.get('following', []):
+        following_user = await db.users.find_one({"user_id": following_id}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        if following_user:
+            following.append(following_user)
+    
+    return following
+
 # Posts
 @api_router.post("/posts")
 async def create_post(post_create: PostCreate, user: User = Depends(get_current_user)):
+    # Check if user is muted
+    if user.is_muted:
+        if user.mute_until and datetime.fromisoformat(user.mute_until) > datetime.now(timezone.utc):
+            raise HTTPException(status_code=403, detail="You are muted and cannot post")
+    
+    # Get next serial number
+    last_post = await db.posts.find_one({}, {"_id": 0, "serial_number": 1}, sort=[("serial_number", -1)])
+    next_serial = (last_post.get('serial_number', 0) + 1) if last_post else 1
+    
+    # Determine if official based on visibility
+    is_official = post_create.visibility == "official" and (user.is_admin or user.is_moderator)
+    
     post = Post(
+        serial_number=next_serial,
         user_id=user.user_id,
         content=post_create.content,
         images=post_create.images,
-        is_official=user.is_admin or user.is_moderator
+        visibility=post_create.visibility,
+        is_official=is_official
     )
     
     doc = post.model_dump()
@@ -627,17 +685,23 @@ async def create_post(post_create: PostCreate, user: User = Depends(get_current_
 @api_router.get("/posts/feed/{feed_type}")
 async def get_feed(feed_type: str, user: User = Depends(get_current_user), skip: int = 0, limit: int = 20):
     if feed_type == "official":
-        posts = await db.posts.find({"is_official": True}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        posts = await db.posts.find({"visibility": "official", "is_official": True}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     elif feed_type == "following":
-        posts = await db.posts.find({"user_id": {"$in": user.following}}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        posts = await db.posts.find({
+            "user_id": {"$in": user.following},
+            "visibility": {"$in": ["public", "official"]}
+        }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     else:  # public feed
-        posts = await db.posts.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        posts = await db.posts.find({
+            "visibility": {"$in": ["public", "official"]},
+            "is_official": False
+        }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     # Enrich with user data
     for post in posts:
         if isinstance(post.get('created_at'), str):
             post['created_at'] = datetime.fromisoformat(post['created_at'])
-        post_user = await db.users.find_one({"user_id": post['user_id']}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1, "badges": 1})
+        post_user = await db.users.find_one({"user_id": post['user_id']}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1, "badges": 1, "role": 1})
         post['user'] = post_user
     
     return posts
@@ -648,7 +712,14 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    posts = await db.posts.find({"user_id": target_user['user_id']}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    # Show all posts if viewing own profile, otherwise filter visibility
+    if target_user['user_id'] == user.user_id:
+        posts = await db.posts.find({"user_id": target_user['user_id']}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    else:
+        posts = await db.posts.find({
+            "user_id": target_user['user_id'],
+            "visibility": {"$in": ["public", "official"]}
+        }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     for post in posts:
         if isinstance(post.get('created_at'), str):
@@ -658,7 +729,8 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
             "display_name": target_user['display_name'],
             "id_number": target_user['id_number'],
             "profile_picture": target_user.get('profile_picture'),
-            "badges": target_user.get('badges', [])
+            "badges": [b for b in target_user.get('badges', []) if b != "Superior"],  # Filter out Superior badge
+            "role": target_user.get('role')
         }
     
     return posts
@@ -704,6 +776,7 @@ async def add_comment(post_id: str, comment: CommentCreate, user: User = Depends
         "comment_id": str(uuid.uuid4()),
         "user_id": user.user_id,
         "display_name": user.display_name,
+        "profile_picture": user.profile_picture,
         "content": comment.content,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -724,6 +797,25 @@ async def add_comment(post_id: str, comment: CommentCreate, user: User = Depends
         )
     
     return {"status": "success", "comment": comment_data}
+
+@api_router.get("/posts/{post_id}/likes")
+async def get_post_likes(post_id: str, user: User = Depends(get_current_user)):
+    post = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Only post owner can see who liked
+    if post['user_id'] != user.user_id:
+        raise HTTPException(status_code=403, detail="Only post owner can see likes")
+    
+    # Get user details for each like
+    like_users = []
+    for user_id in post.get('likes', []):
+        like_user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        if like_user:
+            like_users.append(like_user)
+    
+    return like_users
 
 @api_router.get("/posts/search")
 async def search_posts(query: str = Query(..., min_length=1), user: User = Depends(get_current_user)):
