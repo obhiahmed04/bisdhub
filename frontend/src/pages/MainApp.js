@@ -14,12 +14,13 @@ import {
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
 import NotificationBell from '../components/NotificationBell';
+import CreatePostDialog from '../components/CreatePostDialog';
+import CommentSection from '../components/CommentSection';
 
 const MainApp = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('home');
   const [feedType, setFeedType] = useState('feed');
   const [posts, setPosts] = useState([]);
-  const [newPostContent, setNewPostContent] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState({ users: [], posts: [] });
   const [activeChatRoom, setActiveChatRoom] = useState('general');
@@ -31,6 +32,7 @@ const MainApp = ({ user, onLogout }) => {
   const [newDMMessage, setNewDMMessage] = useState('');
   const [ws, setWs] = useState(null);
   const [wsReady, setWsReady] = useState(false);
+  const [expandedComments, setExpandedComments] = useState({});
   const navigate = useNavigate();
   const chatEndRef = useRef(null);
 
@@ -353,31 +355,17 @@ const MainApp = ({ user, onLogout }) => {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">{activeTab === 'home' && (
           <div className="flex-1 overflow-hidden flex">
-            <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-6">
+            <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-4 md:p-6">
               {/* Create Post */}
-              <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-6 mb-6">
-                <Textarea
-                  data-testid="create-post-input"
-                  value={newPostContent}
-                  onChange={(e) => setNewPostContent(e.target.value)}
-                  placeholder="What's on your mind?"
-                  className="bg-white border-2 border-[#111111] rounded-xl px-4 py-3 mb-4 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] resize-none"
-                  rows={3}
-                />
-                <Button
-                  data-testid="create-post-button"
-                  onClick={createPost}
-                  className="bg-[#2563EB] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] font-bold px-6 py-2 rounded-xl"
-                >
-                  Post
-                </Button>
+              <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4 md:p-6 mb-6">
+                <CreatePostDialog user={user} onPostCreated={loadFeed} />
               </div>
 
               {/* Feed Tabs */}
               <Tabs value={feedType} onValueChange={setFeedType} className="mb-4">
                 <TabsList className="bg-white border-2 border-[#111111] rounded-xl p-1">
                   <TabsTrigger value="official" data-testid="feed-official">Official</TabsTrigger>
-                  <TabsTrigger value="feed" data-testid="feed-public">Feed</TabsTrigger>
+                  <TabsTrigger value="feed" data-testid="feed-public">Public</TabsTrigger>
                   <TabsTrigger value="following" data-testid="feed-following">Following</TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -386,26 +374,49 @@ const MainApp = ({ user, onLogout }) => {
               <ScrollArea className="flex-1">
                 <div className="space-y-6">
                   {posts.map((post) => (
-                    <div key={post.post_id} data-testid={`post-${post.post_id}`} className="bg-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] rounded-xl p-6">
-                      <div className="flex items-start gap-4 mb-4">
-                        <Avatar className="border-2 border-[#111111]">
+                    <div key={post.post_id} data-testid={`post-${post.post_id}`} className="bg-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] rounded-xl p-4 md:p-6">
+                      <div className="flex items-start gap-3 md:gap-4 mb-4">
+                        <Avatar 
+                          className="border-2 border-[#111111] cursor-pointer hover:opacity-80" 
+                          onClick={() => navigate(`/profile/${post.user?.id_number}`)}
+                        >
                           <AvatarImage src={post.user?.profile_picture} />
                           <AvatarFallback>{post.user?.display_name?.[0]}</AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-lg">{post.user?.display_name}</h3>
-                            {post.user?.badges?.map((badge, i) => (
-                              <span key={i} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 
+                              className="font-bold text-base md:text-lg cursor-pointer hover:underline" 
+                              onClick={() => navigate(`/profile/${post.user?.id_number}`)}
+                            >
+                              {post.user?.display_name}
+                            </h3>
+                            {post.user?.badges?.filter(b => b !== "Superior").map((badge, i) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white">
                                 {badge}
                               </span>
                             ))}
+                            {post.is_official && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#2563EB] text-white">
+                                Official
+                              </span>
+                            )}
+                            {post.serial_number && (
+                              <span className="text-xs text-[#4B4B4B]">
+                                #{post.serial_number}
+                              </span>
+                            )}
                           </div>
-                          <p className="text-sm text-[#4B4B4B]">@{post.user?.id_number}</p>
+                          <p 
+                            className="text-sm text-[#4B4B4B] cursor-pointer hover:underline" 
+                            onClick={() => navigate(`/profile/${post.user?.id_number}`)}
+                          >
+                            @{post.user?.id_number}
+                          </p>
                         </div>
                       </div>
-                      <p className="text-base mb-4">{post.content}</p>
-                      <div className="flex gap-4">
+                      <p className="text-sm md:text-base mb-4 break-words">{post.content}</p>
+                      <div className="flex flex-wrap gap-3 md:gap-4">
                         <button
                           data-testid={`like-post-${post.post_id}`}
                           onClick={() => likePost(post.post_id, post.likes?.includes(user.user_id))}
@@ -414,7 +425,10 @@ const MainApp = ({ user, onLogout }) => {
                           <Heart size={20} weight={post.likes?.includes(user.user_id) ? 'fill' : 'bold'} />
                           {post.likes?.length || 0}
                         </button>
-                        <button className="flex items-center gap-2 text-[#111111] hover:text-[#2563EB] font-medium text-sm">
+                        <button 
+                          onClick={() => setExpandedComments({...expandedComments, [post.post_id]: !expandedComments[post.post_id]})}
+                          className="flex items-center gap-2 text-[#111111] hover:text-[#2563EB] font-medium text-sm"
+                        >
                           <ChatCircle size={20} weight="bold" />
                           {post.comments?.length || 0}
                         </button>
@@ -424,10 +438,15 @@ const MainApp = ({ user, onLogout }) => {
                             className="flex items-center gap-2 text-[#111111] hover:text-[#FF6B6B] font-medium text-sm ml-auto"
                           >
                             <Flag size={18} weight="bold" />
-                            Report
+                            <span className="hidden md:inline">Report</span>
                           </button>
                         )}
                       </div>
+                      
+                      {/* Comment Section */}
+                      {expandedComments[post.post_id] && (
+                        <CommentSection post={post} user={user} />
+                      )}
                     </div>
                   ))}
                 </div>
