@@ -87,11 +87,16 @@ const LoginPage = ({ onLogin }) => {
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-6 text-center space-y-2">
             <p className="text-sm font-medium text-[#4B4B4B]">
               New to BISD HUB?{' '}
               <Link to="/register" className="text-[#2563EB] font-bold hover:underline" data-testid="register-link">
                 Register here
+              </Link>
+            </p>
+            <p className="text-sm font-medium text-[#4B4B4B]">
+              <Link to="/pending-registration" className="text-[#2563EB] font-bold hover:underline" data-testid="check-status-link">
+                Check registration status
               </Link>
             </p>
           </div>

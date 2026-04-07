@@ -10,6 +10,13 @@ body {
   font-family: 'Figtree', sans-serif;
   background-color: #FDFBF7;
   color: #111111;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body,
+.dark .bg-page {
+  background-color: #0f0f0f;
+  color: #e4e4e4;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -20,30 +27,39 @@ h1, h2, h3, h4, h5, h6 {
   min-height: 100vh;
 }
 
-.neo-shadow {
-  box-shadow: 4px 4px 0px 0px rgba(17, 17, 17, 1);
+/* Dark mode overrides */
+.dark {
+  --bg-primary: #0f0f0f;
+  --bg-card: #1a1a1a;
+  --bg-sidebar: #141414;
+  --bg-input: #222222;
+  --border-color: #333333;
+  --text-primary: #e4e4e4;
+  --text-secondary: #999999;
+  --accent-blue: #3b82f6;
+  --accent-green: #34d399;
+  --accent-red: #f87171;
+  --accent-yellow: #fbbf24;
 }
 
-.neo-shadow-sm {
-  box-shadow: 2px 2px 0px 0px rgba(17, 17, 17, 1);
-}
-
-.neo-border {
-  border: 2px solid #111111;
-}
-
-.btn-neo {
-  transition: all 75ms ease-in-out;
-}
-
-.btn-neo:hover {
-  transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0px 0px rgba(17, 17, 17, 1);
-}
-
-.btn-neo:active {
-  transform: translate(4px, 4px);
-  box-shadow: none;
+.dark .bg-white { background-color: var(--bg-card) !important; }
+.dark .bg-\[\#FDFBF7\] { background-color: var(--bg-primary) !important; }
+.dark .border-\[\#111111\] { border-color: var(--border-color) !important; }
+.dark .text-\[\#111111\] { color: var(--text-primary) !important; }
+.dark .text-\[\#4B4B4B\] { color: var(--text-secondary) !important; }
+.dark .shadow-\[4px_4px_0px_0px_rgba\(17\,17\,17\,1\)\] { box-shadow: 4px 4px 0px 0px rgba(51,51,51,1) !important; }
+.dark .shadow-\[2px_2px_0px_0px_rgba\(17\,17\,17\,1\)\] { box-shadow: 2px 2px 0px 0px rgba(51,51,51,1) !important; }
+.dark .shadow-\[8px_8px_0px_0px_rgba\(17\,17\,17\,1\)\] { box-shadow: 8px 8px 0px 0px rgba(51,51,51,1) !important; }
+.dark .bg-\[\#F5F5F5\] { background-color: #222222 !important; }
+.dark .bg-\[\#E6F4EA\] { background-color: #1a2e1a !important; }
+.dark .bg-\[\#FFF4E5\] { background-color: #2e2a1a !important; }
+.dark .bg-\[\#E8E6F4\] { background-color: #1e1e2e !important; }
+.dark .border-\[\#D1D1D1\] { border-color: #333333 !important; }
+.dark .hover\:bg-\[\#A7F3D0\]:hover { background-color: #1a3a2a !important; }
+.dark input, .dark textarea, .dark select {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
 }
 
 ::-webkit-scrollbar {
@@ -55,11 +71,23 @@ h1, h2, h3, h4, h5, h6 {
   background: #FDFBF7;
 }
 
+.dark ::-webkit-scrollbar-track {
+  background: #0f0f0f;
+}
+
 ::-webkit-scrollbar-thumb {
   background: #D1D1D1;
   border-radius: 4px;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #444444;
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: #111111;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #666666;
 }

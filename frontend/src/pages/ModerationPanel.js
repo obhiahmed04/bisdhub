@@ -13,6 +13,7 @@ import api from '../utils/api';
 const ModerationPanel = ({ user, onLogout }) => {
   const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [moderationAction, setModerationAction] = useState('');
   const [reason, setReason] = useState('');
@@ -271,9 +272,18 @@ const ModerationPanel = ({ user, onLogout }) => {
 
             <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4 md:p-6">
               <h3 className="text-lg font-black mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>All Users</h3>
+              <div className="mb-3">
+                <Input data-testid="mod-user-search" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by ID, name..."
+                  className="border-2 border-[#111111] rounded-xl px-4 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] max-w-md" />
+              </div>
               <ScrollArea className="h-[400px] md:h-[500px]">
                 <div className="space-y-2">
-                  {users.map((u) => (
+                  {users.filter(u => {
+                    if (!userSearch.trim()) return true;
+                    const q = userSearch.toLowerCase();
+                    return u.id_number?.toLowerCase().includes(q) || u.display_name?.toLowerCase().includes(q);
+                  }).map((u) => (
                     <div
                       key={u.user_id}
                       onClick={() => setSelectedUser(u)}

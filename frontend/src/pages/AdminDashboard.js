@@ -12,6 +12,7 @@ import api from '../utils/api';
 const AdminDashboard = ({ user, onLogout }) => {
   const [pendingRegs, setPendingRegs] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
   const [selectedReg, setSelectedReg] = useState(null);
   const [password, setPassword] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
@@ -262,6 +263,11 @@ const AdminDashboard = ({ user, onLogout }) => {
 
           <TabsContent value="users">
             <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-6">
+              <div className="mb-4">
+                <Input data-testid="admin-user-search" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by ID, name, email..."
+                  className="border-2 border-[#111111] rounded-xl px-4 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] max-w-md" />
+              </div>
               <ScrollArea className="h-[600px]">
                 <table className="w-full">
                   <thead>
@@ -275,7 +281,11 @@ const AdminDashboard = ({ user, onLogout }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {allUsers.map((u) => (
+                    {allUsers.filter(u => {
+                      if (!userSearch.trim()) return true;
+                      const q = userSearch.toLowerCase();
+                      return u.id_number?.toLowerCase().includes(q) || u.display_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q) || u.full_name?.toLowerCase().includes(q);
+                    }).map((u) => (
                       <tr key={u.user_id} className="border-b border-[#D1D1D1] hover:bg-[#A7F3D0]">
                         <td className="py-3 px-4 font-medium">{u.id_number}</td>
                         <td className="py-3 px-4">{u.display_name}</td>

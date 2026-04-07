@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -15,6 +16,8 @@ import jwt
 import asyncio
 import resend
 import random
+import shutil
+import aiofiles
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -37,6 +40,10 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
+# File upload directory
+UPLOAD_DIR = Path(__file__).parent / "uploads"
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 # Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,25 +52,38 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.user_rooms: Dict[str, set] = {}  # user_id -> set of rooms
 
     async def connect(self, user_id: str, websocket: WebSocket):
         await websocket.accept()
         self.active_connections[user_id] = websocket
+        self.user_rooms[user_id] = set()
 
     def disconnect(self, user_id: str):
         if user_id in self.active_connections:
             del self.active_connections[user_id]
+        if user_id in self.user_rooms:
+            del self.user_rooms[user_id]
+
+    def join_room(self, user_id: str, room: str):
+        if user_id not in self.user_rooms:
+            self.user_rooms[user_id] = set()
+        self.user_rooms[user_id].add(room)
 
     async def send_personal_message(self, message: dict, user_id: str):
         if user_id in self.active_connections:
-            await self.active_connections[user_id].send_json(message)
-
-    async def broadcast(self, message: dict, chat_room: str):
-        for user_id, connection in self.active_connections.items():
             try:
-                await connection.send_json(message)
-            except:
+                await self.active_connections[user_id].send_json(message)
+            except Exception:
                 pass
+
+    async def broadcast_to_room(self, message: dict, chat_room: str):
+        for user_id, rooms in self.user_rooms.items():
+            if chat_room in rooms and user_id in self.active_connections:
+                try:
+                    await self.active_connections[user_id].send_json(message)
+                except Exception:
+                    pass
 
 manager = ConnectionManager()
 
@@ -112,7 +132,7 @@ class UserLogin(BaseModel):
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    id_number: str  # Primary key/username
+    id_number: str
     full_name: str
     display_name: str
     date_of_birth: str
@@ -125,20 +145,26 @@ class User(BaseModel):
     last_class: Optional[str] = None
     password_hash: str
     profile_picture: Optional[str] = None
-    banner_image: Optional[str] = "https://static.prod-images.emergentagent.com/jobs/17b61164-1d10-46cf-baba-b1316ac6e12c/images/3363304a1d6cf6e5fdb07fb61d2e7c00bb6c265629ca175243351c3baa65a1b2.png"
+    banner_image: Optional[str] = None
     bio: Optional[str] = ""
     badges: List[str] = Field(default_factory=list)
-    role: Optional[str] = "user"  # user, Moderator, Head Moderator, Chief Moderator, Administrator, Head Administrator, Chief Administrator, Chief of Staff, Community Manager, Management, Project Owner
+    role: Optional[str] = "user"
     is_profile_public: bool = True
+    is_followers_public: bool = True
+    is_following_public: bool = True
     is_admin: bool = False
     is_moderator: bool = False
     is_banned: bool = False
     is_muted: bool = False
     ban_reason: Optional[str] = None
-    mute_until: Optional[datetime] = None
+    mute_until: Optional[str] = None
+    registration_status: str = "approved"  # approved, banned, rejected, pending
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     followers: List[str] = Field(default_factory=list)
     following: List[str] = Field(default_factory=list)
+    friends: List[str] = Field(default_factory=list)
+    friend_requests_sent: List[str] = Field(default_factory=list)
+    friend_requests_received: List[str] = Field(default_factory=list)
 
 class Post(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -174,22 +200,22 @@ class AdminAction(BaseModel):
     reg_id: str
     action: str  # approve or reject
     rejection_reason: Optional[str] = None
-    password: str  # Temporary password for approved users
+    password: Optional[str] = None  # Required only for approve
 
 class ProfileUpdate(BaseModel):
     display_name: Optional[str] = None
+    full_name: Optional[str] = None
     bio: Optional[str] = None
     profile_picture: Optional[str] = None
     banner_image: Optional[str] = None
     is_profile_public: Optional[bool] = None
     is_followers_public: Optional[bool] = None
     is_following_public: Optional[bool] = None
-    display_name_format: Optional[str] = None  # full, first_last, first_only
 
 class PostCreate(BaseModel):
     content: str
     images: List[str] = Field(default_factory=list)
-    visibility: str = "public"  # public, profile_only, official
+    visibility: str = "public"  # public, profile_only, official, friends_only
 
 class CommentCreate(BaseModel):
     content: str
@@ -432,6 +458,8 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
         raise HTTPException(status_code=404, detail="Registration not found")
     
     if action.action == "approve":
+        if not action.password:
+            raise HTTPException(status_code=400, detail="Password is required for approval")
         # Create user account
         password_hash = bcrypt.hashpw(action.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
@@ -511,9 +539,15 @@ async def login(login_request: UserLogin):
     token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     
     user_data = User(**user)
+    response_data = user_data.model_dump(exclude={'password_hash'})
+    
+    # Add status flags for routing
+    if user_data.is_banned:
+        response_data['registration_status'] = 'banned'
+    
     return {
         "token": token,
-        "user": user_data.model_dump(exclude={'password_hash'})
+        "user": response_data
     }
 
 # Get current user profile
@@ -795,8 +829,13 @@ async def get_friends_list(user: User = Depends(get_current_user)):
 async def create_post(post_create: PostCreate, user: User = Depends(get_current_user)):
     # Check if user is muted
     if user.is_muted:
-        if user.mute_until and datetime.fromisoformat(user.mute_until) > datetime.now(timezone.utc):
-            raise HTTPException(status_code=403, detail="You are muted and cannot post")
+        if user.mute_until:
+            try:
+                mute_end = datetime.fromisoformat(str(user.mute_until))
+                if mute_end > datetime.now(timezone.utc):
+                    raise HTTPException(status_code=403, detail="You are muted and cannot post")
+            except (ValueError, TypeError):
+                pass
     
     # Get next serial number
     last_post = await db.posts.find_one({}, {"_id": 0, "serial_number": 1}, sort=[("serial_number", -1)])
@@ -823,16 +862,20 @@ async def create_post(post_create: PostCreate, user: User = Depends(get_current_
 @api_router.get("/posts/feed/{feed_type}")
 async def get_feed(feed_type: str, user: User = Depends(get_current_user), skip: int = 0, limit: int = 20):
     if feed_type == "official":
-        posts = await db.posts.find({"visibility": "official", "is_official": True}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+        posts = await db.posts.find({"visibility": "official"}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     elif feed_type == "following":
         posts = await db.posts.find({
             "user_id": {"$in": user.following},
-            "visibility": {"$in": ["public", "official"]}
+            "visibility": {"$in": ["public"]}
+        }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    elif feed_type == "friends":
+        posts = await db.posts.find({
+            "user_id": {"$in": user.friends},
+            "visibility": {"$in": ["public", "friends_only"]}
         }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     else:  # public feed
         posts = await db.posts.find({
-            "visibility": {"$in": ["public", "official"]},
-            "is_official": False
+            "visibility": "public"
         }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     # Enrich with user data
@@ -854,9 +897,13 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
     if target_user['user_id'] == user.user_id:
         posts = await db.posts.find({"user_id": target_user['user_id']}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     else:
+        allowed_vis = ["public", "official"]
+        # Add friends_only if the viewer is a friend
+        if user.user_id in target_user.get('friends', []):
+            allowed_vis.append("friends_only")
         posts = await db.posts.find({
             "user_id": target_user['user_id'],
-            "visibility": {"$in": ["public", "official"]}
+            "visibility": {"$in": allowed_vis}
         }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     
     for post in posts:
@@ -934,7 +981,17 @@ async def add_comment(post_id: str, comment: CommentCreate, user: User = Depends
             post_id
         )
     
-    return {"status": "success", "comment": comment_data}
+    return {
+        "status": "success",
+        "comment": {
+            **comment_data,
+            "user": {
+                "display_name": user.display_name,
+                "profile_picture": user.profile_picture,
+                "id_number": user.id_number
+            }
+        }
+    }
 
 @api_router.get("/posts/{post_id}/likes")
 async def get_post_likes(post_id: str, user: User = Depends(get_current_user)):
@@ -1359,14 +1416,17 @@ async def get_all_help_chats(admin: User = Depends(verify_admin)):
     return result
 
 # WebSocket for real-time chat
-@app.websocket("/ws/{user_id}")
+@app.websocket("/api/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(user_id, websocket)
     try:
         while True:
             data = await websocket.receive_json()
             
-            if data['type'] == 'chat_message':
+            if data['type'] == 'join_room':
+                manager.join_room(user_id, data['room'])
+            
+            elif data['type'] == 'chat_message':
                 # Save to database
                 chat_msg = ChatMessage(
                     chat_room=data['chat_room'],
@@ -1378,14 +1438,19 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 await db.chat_messages.insert_one(doc)
                 
                 # Get user info
-                user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "display_name": 1, "profile_picture": 1})
+                ws_user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "display_name": 1, "profile_picture": 1})
                 
-                # Broadcast to all connected users
+                # Broadcast to room members only
                 broadcast_data = {
-                    **doc,
-                    "user": user
+                    "type": "chat_message",
+                    "message_id": doc['message_id'],
+                    "chat_room": doc['chat_room'],
+                    "user_id": user_id,
+                    "content": doc['content'],
+                    "created_at": doc['created_at'],
+                    "user": ws_user
                 }
-                await manager.broadcast(broadcast_data, data['chat_room'])
+                await manager.broadcast_to_room(broadcast_data, data['chat_room'])
             
             elif data['type'] == 'dm':
                 dm = DirectMessage(
@@ -1397,11 +1462,65 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 doc['created_at'] = doc['created_at'].isoformat()
                 await db.direct_messages.insert_one(doc)
                 
+                dm_data = {
+                    "type": "dm",
+                    "dm_id": doc['dm_id'],
+                    "sender_id": user_id,
+                    "receiver_id": data['receiver_id'],
+                    "content": doc['content'],
+                    "created_at": doc['created_at'],
+                    "read": False
+                }
                 # Send to receiver
-                await manager.send_personal_message(doc, data['receiver_id'])
+                await manager.send_personal_message(dm_data, data['receiver_id'])
+                # Echo back to sender
+                await manager.send_personal_message(dm_data, user_id)
     
     except WebSocketDisconnect:
         manager.disconnect(user_id)
+
+# File Upload endpoint
+@api_router.post("/upload")
+async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime']
+    if file.content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail=f"File type {file.content_type} not allowed")
+    
+    max_size = 10 * 1024 * 1024  # 10MB
+    content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+    
+    ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+    filename = f"{uuid.uuid4()}.{ext}"
+    filepath = UPLOAD_DIR / filename
+    
+    async with aiofiles.open(filepath, 'wb') as f:
+        await f.write(content)
+    
+    return {"url": f"/api/uploads/{filename}"}
+
+# Serve uploaded files
+@api_router.get("/uploads/{filename}")
+async def get_upload(filename: str):
+    from fastapi.responses import FileResponse
+    filepath = UPLOAD_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(filepath)
+
+# Check registration status (for pending/rejected users to check)
+@api_router.get("/auth/check-registration/{id_number}")
+async def check_registration_status(id_number: str):
+    reg = await db.registrations.find_one({"id_number": id_number}, {"_id": 0})
+    if not reg:
+        return {"status": "not_found"}
+    return {
+        "status": reg['status'],
+        "reg_id": reg['reg_id'],
+        "serial_number": reg.get('serial_number'),
+        "rejection_reason": reg.get('rejection_reason')
+    }
 
 # Include router
 app.include_router(api_router)

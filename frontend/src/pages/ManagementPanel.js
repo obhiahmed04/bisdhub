@@ -30,6 +30,7 @@ const ManagementPanel = ({ user, onLogout }) => {
   const [newRole, setNewRole] = useState('');
   const [newBadges, setNewBadges] = useState('');
   const [searchLogs, setSearchLogs] = useState('');
+  const [userSearch, setUserSearch] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -162,6 +163,11 @@ const ManagementPanel = ({ user, onLogout }) => {
             </div>
 
             <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4 md:p-6">
+              <div className="mb-4">
+                <Input data-testid="management-user-search" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search users by ID, name..."
+                  className="border-2 border-[#111111] rounded-xl px-4 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] max-w-md" />
+              </div>
               <ScrollArea className="h-[500px] md:h-[600px]">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm md:text-base">
@@ -176,7 +182,11 @@ const ManagementPanel = ({ user, onLogout }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {allUsers.map((u) => (
+                      {allUsers.filter(u => {
+                        if (!userSearch.trim()) return true;
+                        const q = userSearch.toLowerCase();
+                        return u.id_number?.toLowerCase().includes(q) || u.display_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
+                      }).map((u) => (
                         <tr key={u.user_id} className="border-b border-[#D1D1D1] hover:bg-[#A7F3D0]">
                           <td className="py-3 px-2 md:px-4 font-medium">{u.id_number}</td>
                           <td className="py-3 px-2 md:px-4">{u.display_name}</td>
