@@ -1,0 +1,126 @@
+{
+  "theme_and_archetype": {
+    "domain": "Social App, Private Community, School/Student Network",
+    "theme": "LIGHT",
+    "archetype": "Archetype 3 (Pastel & Soft) mixed with Neo-Brutalism",
+    "vibe": "Optimistic, tactile, raw, high-contrast, and engaging. Rejects sterile corporate 'SaaS' polish in favor of expressive, blocky, and imperfect Gen-Z aesthetics."
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Outfit",
+      "body": "Figtree"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-bold",
+      "h4": "text-lg sm:text-xl font-bold",
+      "body": "text-base font-medium leading-relaxed",
+      "small": "text-sm font-medium",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em]"
+    },
+    "pairing_strategy": "Radical weight contrast. Headings are massive and heavy (font-black), while body is highly legible (font-medium). Avoid 'Regular' weight if possible to create visual tension."
+  },
+  "colors": {
+    "background": {
+      "base": "#FDFBF7",
+      "card": "#FFFFFF",
+      "chat_bubble": "#E6F4EA"
+    },
+    "text": {
+      "primary": "#111111",
+      "secondary": "#4B4B4B",
+      "inverse": "#FDFBF7"
+    },
+    "accents": {
+      "primary": "#2563EB",
+      "secondary": "#FF6B6B",
+      "tertiary": "#A7F3D0",
+      "quaternary": "#E8E6F4"
+    },
+    "borders": {
+      "default": "#111111",
+      "light": "#D1D1D1"
+    },
+    "states": {
+      "hover_primary": "#1D4ED8",
+      "focus_ring": "#2563EB"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous Spacing + Anti-Grid. Use thick paddings. Combine standard centered social feeds with 'bento' layouts for profiles.",
+    "scale": {
+      "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+      "feed": "max-w-2xl mx-auto",
+      "card_padding": "p-6 sm:p-8"
+    },
+    "structural_layout": {
+      "main_app": "3-column layout on desktop: Left Sidebar (Navigation, Groups), Center Column (Main Feed/Chat), Right Sidebar (Online Users, Trending, Search).",
+      "profile_page": "Top cover banner full width, overlapping PFP, followed by a Bento Grid (grid-cols-1 md:grid-cols-4) for Bio, Badges, Class/Section, and Feed."
+    }
+  },
+  "component_rules": {
+    "global_modifiers": {
+      "neo_brutalism_shadow": "shadow-[4px_4px_0px_0px_rgba(17,17,17,1)]",
+      "neo_brutalism_border": "border-2 border-[#111111]",
+      "rounded": "rounded-xl"
+    },
+    "buttons": {
+      "primary": "bg-[#2563EB] text-[#FDFBF7] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all duration-75 font-bold",
+      "secondary": "bg-[#A7F3D0] text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all duration-75 font-bold"
+    },
+    "cards": {
+      "feed_post": "bg-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] rounded-xl p-6 mb-6",
+      "profile_bento": "bg-white border-2 border-[#111111] rounded-xl p-6"
+    },
+    "inputs": {
+      "default": "bg-white border-2 border-[#111111] rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-4 focus:ring-[#A7F3D0] focus:border-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] transition-all duration-75"
+    },
+    "chat_bubbles": {
+      "self": "bg-[#E6F4EA] border-2 border-[#111111] rounded-2xl rounded-tr-none px-4 py-3 text-[#111111]",
+      "other": "bg-white border-2 border-[#111111] rounded-2xl rounded-tl-none px-4 py-3 text-[#111111]"
+    },
+    "badges": {
+      "role": "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white"
+    }
+  },
+  "motion_and_interactions": {
+    "philosophy": "Abrupt, tactile, and responsive. Avoid long, smooth fades. Use fast, springy transitions that feel like physical buttons being pressed.",
+    "hover_states": "Hard shadows compress, buttons shift down/right slightly.",
+    "transitions": "transition-all duration-75 ease-in-out"
+  },
+  "media_and_assets": {
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "weight": "bold",
+      "install_command": "yarn add @phosphor-icons/react"
+    },
+    "images": [
+      {
+        "category": "registration_login_background",
+        "description": "Modern high school campus building to provide context for the BISD Hub.",
+        "url": "https://images.unsplash.com/photo-1592669282789-cf5eac5807e5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHw0fHxtb2Rlcm4lMjBoaWdoJTIwc2Nob29sJTIwY2FtcHVzJTIwYnVpbGRpbmd8ZW58MHx8fHwxNzc1NTczNDk2fDA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "category": "default_profile_banner",
+        "description": "Abstract neo-brutalist background pattern with pastel shapes for user profiles.",
+        "url": "https://static.prod-images.emergentagent.com/jobs/17b61164-1d10-46cf-baba-b1316ac6e12c/images/3363304a1d6cf6e5fdb07fb61d2e7c00bb6c265629ca175243351c3baa65a1b2.png"
+      },
+      {
+        "category": "welcome_empty_state",
+        "description": "Illustration of Gen Z students for empty feed states or welcome screens.",
+        "url": "https://static.prod-images.emergentagent.com/jobs/17b61164-1d10-46cf-baba-b1316ac6e12c/images/3ef48b0f1ec218e86c1667e639482afad91c67c03a477473314fb3729b604b7e.png"
+      }
+    ]
+  },
+  "instructions_to_main_agent": {
+    "registration_flow": "Use a multi-step form (stepper) for registration. Collect ID, Full Name, DOB, Class, Section, Email (OTP), Phone (Optional OTP), Status (Current/Ex). Show 'Awaiting Admin Approval' state upon completion.",
+    "admin_and_mod_panels": "Design dense 'Control Room' grids (tight spacing, heavy data visualization) for Admin/Mod panels, contrasting with the playful main app.",
+    "navigation": "Create a persistent left sidebar on desktop (hamburger drawer on mobile) containing Home, Global Chat, DMs, Profile, Settings. Right sidebar for 'Trending/Search/Online Users'.",
+    "global_chat": "Implement distinct channels: General, Boys Only, Girls Only, Class Only, Section Only, EX Students. Use distinct tertiary colors (e.g., Lavender, Mint) to differentiate chat room headers.",
+    "profile_system": "Mimic Discord/Twitter profile. The default_profile_banner image URL must be used as the default cover photo. Display Badges (e.g., 'Class Rep', 'Ex-Student') prominently under the Name/Username.",
+    "testing": "CRITICAL: All interactive elements (buttons, inputs, links, chat rooms) MUST include a data-testid attribute in kebab-case format (e.g., data-testid='login-submit-button', data-testid='nav-global-chat').",
+    "component_usage": "DO NOT build complex components (dialogs, dropdowns) from scratch. Use Shadcn UI primitives but heavily customize their Tailwind classes to match the 'neo_brutalism' modifier rules defined above.",
+    "feed_system": "Support Official Channels, Feed (Public), and Followings. Use tabs to switch between these feeds on the Home page."
+  }
+}
