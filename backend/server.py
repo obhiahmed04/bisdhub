@@ -127,9 +127,14 @@ class User(BaseModel):
     banner_image: Optional[str] = "https://static.prod-images.emergentagent.com/jobs/17b61164-1d10-46cf-baba-b1316ac6e12c/images/3363304a1d6cf6e5fdb07fb61d2e7c00bb6c265629ca175243351c3baa65a1b2.png"
     bio: Optional[str] = ""
     badges: List[str] = Field(default_factory=list)
+    role: Optional[str] = "user"  # user, Moderator, Head Moderator, Chief Moderator, Administrator, Head Administrator, Chief Administrator, Chief of Staff, Community Manager, Management, Project Owner
     is_profile_public: bool = True
     is_admin: bool = False
     is_moderator: bool = False
+    is_banned: bool = False
+    is_muted: bool = False
+    ban_reason: Optional[str] = None
+    mute_until: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     followers: List[str] = Field(default_factory=list)
     following: List[str] = Field(default_factory=list)
@@ -182,6 +187,57 @@ class PostCreate(BaseModel):
 class CommentCreate(BaseModel):
     content: str
 
+class Notification(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    notification_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str  # Who receives the notification
+    type: str  # like, comment, follow, dm, mention
+    from_user_id: str  # Who triggered the notification
+    content: str
+    post_id: Optional[str] = None
+    read: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ActionLog(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    log_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    admin_id: str
+    admin_name: str
+    action_type: str  # approve, reject, ban, unban, mute, unmute, delete_post, assign_role
+    target_user_id: Optional[str] = None
+    target_user_name: Optional[str] = None
+    details: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class PostReport(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    report_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    post_id: str
+    reporter_id: str
+    reason: str
+    status: str = "pending"  # pending, reviewed, resolved
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class HelpChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    registration_id: str
+    sender_type: str  # user or admin
+    sender_id: str
+    content: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RoleAssignment(BaseModel):
+    user_id: str
+    role: str
+    badges: List[str]
+
+class ModerationAction(BaseModel):
+    target_user_id: str
+    action: str  # ban, unban, mute, unmute
+    reason: Optional[str] = None
+    mute_duration_hours: Optional[int] = None
+
 # ============= HELPER FUNCTIONS =============
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -202,6 +258,51 @@ async def verify_admin(user: User = Depends(get_current_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+async def verify_moderator(user: User = Depends(get_current_user)):
+    if not user.is_moderator and not user.is_admin:
+        raise HTTPException(status_code=403, detail="Moderator access required")
+    return user
+
+async def verify_management(user: User = Depends(get_current_user)):
+    management_roles = ["Project Owner", "Management"]
+    if user.role not in management_roles:
+        raise HTTPException(status_code=403, detail="Management access required")
+    return user
+
+async def verify_admin_supervisor(user: User = Depends(get_current_user)):
+    supervisor_roles = ["Project Owner", "Management", "Community Manager", "Chief of Staff", "Chief Administrator"]
+    if user.role not in supervisor_roles:
+        raise HTTPException(status_code=403, detail="Admin Supervisor access required")
+    return user
+
+async def log_action(admin_id: str, admin_name: str, action_type: str, details: str, target_user_id: str = None, target_user_name: str = None):
+    log = ActionLog(
+        admin_id=admin_id,
+        admin_name=admin_name,
+        action_type=action_type,
+        target_user_id=target_user_id,
+        target_user_name=target_user_name,
+        details=details
+    )
+    doc = log.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.action_logs.insert_one(doc)
+
+async def send_notification(user_id: str, notification_type: str, from_user_id: str, content: str, post_id: str = None):
+    notification = Notification(
+        user_id=user_id,
+        type=notification_type,
+        from_user_id=from_user_id,
+        content=content,
+        post_id=post_id
+    )
+    doc = notification.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.notifications.insert_one(doc)
+    
+    # Send via WebSocket if user is online
+    await manager.send_personal_message(doc, user_id)
 
 async def send_otp_email(email: str, otp: str):
     html_content = f"""
@@ -339,6 +440,16 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
             {"$set": {"status": "approved"}}
         )
         
+        # Log action
+        await log_action(
+            admin.user_id,
+            admin.display_name,
+            "approve",
+            f"Approved registration for {registration['full_name']} (ID: {registration['id_number']})",
+            user.user_id,
+            registration['full_name']
+        )
+        
         return {"status": "success", "message": "User approved and account created"}
     
     elif action.action == "reject":
@@ -346,6 +457,17 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
             {"reg_id": action.reg_id},
             {"$set": {"status": "rejected", "rejection_reason": action.rejection_reason}}
         )
+        
+        # Log action
+        await log_action(
+            admin.user_id,
+            admin.display_name,
+            "reject",
+            f"Rejected registration for {registration['full_name']} (ID: {registration['id_number']}): {action.rejection_reason}",
+            None,
+            registration['full_name']
+        )
+        
         return {"status": "success", "message": "Registration rejected"}
     
     raise HTTPException(status_code=400, detail="Invalid action")
@@ -456,6 +578,14 @@ async def follow_user(id_number: str, user: User = Depends(get_current_user)):
         {"$addToSet": {"followers": user.user_id}}
     )
     
+    # Send notification
+    await send_notification(
+        target_user['user_id'],
+        "follow",
+        user.user_id,
+        f"{user.display_name} started following you"
+    )
+    
     return {"status": "success", "message": "User followed"}
 
 @api_router.delete("/users/{id_number}/follow")
@@ -535,10 +665,25 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
 
 @api_router.post("/posts/{post_id}/like")
 async def like_post(post_id: str, user: User = Depends(get_current_user)):
+    post = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
     await db.posts.update_one(
         {"post_id": post_id},
         {"$addToSet": {"likes": user.user_id}}
     )
+    
+    # Send notification to post owner
+    if post['user_id'] != user.user_id:
+        await send_notification(
+            post['user_id'],
+            "like",
+            user.user_id,
+            f"{user.display_name} liked your post",
+            post_id
+        )
+    
     return {"status": "success"}
 
 @api_router.delete("/posts/{post_id}/like")
@@ -551,6 +696,10 @@ async def unlike_post(post_id: str, user: User = Depends(get_current_user)):
 
 @api_router.post("/posts/{post_id}/comment")
 async def add_comment(post_id: str, comment: CommentCreate, user: User = Depends(get_current_user)):
+    post = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
     comment_data = {
         "comment_id": str(uuid.uuid4()),
         "user_id": user.user_id,
@@ -563,6 +712,16 @@ async def add_comment(post_id: str, comment: CommentCreate, user: User = Depends
         {"post_id": post_id},
         {"$push": {"comments": comment_data}}
     )
+    
+    # Send notification to post owner
+    if post['user_id'] != user.user_id:
+        await send_notification(
+            post['user_id'],
+            "comment",
+            user.user_id,
+            f"{user.display_name} commented on your post",
+            post_id
+        )
     
     return {"status": "success", "comment": comment_data}
 
@@ -671,6 +830,14 @@ async def send_dm(receiver_id: str, message: dict, user: User = Depends(get_curr
     doc['created_at'] = doc['created_at'].isoformat()
     await db.direct_messages.insert_one(doc)
     
+    # Send notification
+    await send_notification(
+        receiver_id,
+        "dm",
+        user.user_id,
+        f"New message from {user.display_name}"
+    )
+    
     # Send via WebSocket if receiver is online
     await manager.send_personal_message(doc, receiver_id)
     
@@ -689,7 +856,245 @@ async def update_user_badges(user_id: str, badges: List[str], admin: User = Depe
         {"user_id": user_id},
         {"$set": {"badges": badges}}
     )
+    
+    target_user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    await log_action(admin.user_id, admin.display_name, "update_badges", f"Updated badges for {target_user['display_name']}", user_id, target_user['display_name'])
+    
     return {"status": "success"}
+
+# ============= NOTIFICATION SYSTEM =============
+
+@api_router.get("/notifications")
+async def get_notifications(user: User = Depends(get_current_user), limit: int = 50):
+    notifications = await db.notifications.find(
+        {"user_id": user.user_id},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    for notif in notifications:
+        if isinstance(notif.get('created_at'), str):
+            notif['created_at'] = datetime.fromisoformat(notif['created_at'])
+        # Get sender info
+        sender = await db.users.find_one({"user_id": notif['from_user_id']}, {"_id": 0, "display_name": 1, "profile_picture": 1})
+        notif['from_user'] = sender
+    
+    return notifications
+
+@api_router.put("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, user: User = Depends(get_current_user)):
+    await db.notifications.update_one(
+        {"notification_id": notification_id, "user_id": user.user_id},
+        {"$set": {"read": True}}
+    )
+    return {"status": "success"}
+
+@api_router.get("/notifications/unread/count")
+async def get_unread_count(user: User = Depends(get_current_user)):
+    count = await db.notifications.count_documents({"user_id": user.user_id, "read": False})
+    return {"count": count}
+
+# ============= MODERATION SYSTEM =============
+
+@api_router.post("/mod/posts/{post_id}/report")
+async def report_post(post_id: str, reason: dict, user: User = Depends(get_current_user)):
+    report = PostReport(
+        post_id=post_id,
+        reporter_id=user.user_id,
+        reason=reason['reason']
+    )
+    doc = report.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.post_reports.insert_one(doc)
+    
+    return {"status": "success", "message": "Post reported"}
+
+@api_router.get("/mod/reports")
+async def get_reports(mod: User = Depends(verify_moderator), status: str = "pending"):
+    reports = await db.post_reports.find({"status": status}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    for report in reports:
+        if isinstance(report.get('created_at'), str):
+            report['created_at'] = datetime.fromisoformat(report['created_at'])
+        # Get post and reporter info
+        post = await db.posts.find_one({"post_id": report['post_id']}, {"_id": 0})
+        reporter = await db.users.find_one({"user_id": report['reporter_id']}, {"_id": 0, "display_name": 1})
+        report['post'] = post
+        report['reporter'] = reporter
+    
+    return reports
+
+@api_router.post("/mod/users/action")
+async def moderate_user(action: ModerationAction, mod: User = Depends(verify_moderator)):
+    target_user = await db.users.find_one({"user_id": action.target_user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if action.action == "ban":
+        await db.users.update_one(
+            {"user_id": action.target_user_id},
+            {"$set": {"is_banned": True, "ban_reason": action.reason}}
+        )
+        await log_action(mod.user_id, mod.display_name, "ban", f"Banned {target_user['display_name']}: {action.reason}", action.target_user_id, target_user['display_name'])
+        
+    elif action.action == "unban":
+        # Check if mod has unban permission
+        if mod.role not in ["Chief Moderator", "Head Moderator", "Moderator", "Administrator", "Head Administrator", "Chief Administrator", "Chief of Staff", "Community Manager", "Management", "Project Owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions to unban")
+        
+        await db.users.update_one(
+            {"user_id": action.target_user_id},
+            {"$set": {"is_banned": False, "ban_reason": None}}
+        )
+        await log_action(mod.user_id, mod.display_name, "unban", f"Unbanned {target_user['display_name']}", action.target_user_id, target_user['display_name'])
+        
+    elif action.action == "mute":
+        mute_until = datetime.now(timezone.utc) + timedelta(hours=action.mute_duration_hours or 24)
+        await db.users.update_one(
+            {"user_id": action.target_user_id},
+            {"$set": {"is_muted": True, "mute_until": mute_until.isoformat()}}
+        )
+        await log_action(mod.user_id, mod.display_name, "mute", f"Muted {target_user['display_name']} for {action.mute_duration_hours} hours", action.target_user_id, target_user['display_name'])
+        
+    elif action.action == "unmute":
+        if mod.role not in ["Chief Moderator", "Head Moderator", "Moderator", "Administrator", "Head Administrator", "Chief Administrator", "Chief of Staff", "Community Manager", "Management", "Project Owner"]:
+            raise HTTPException(status_code=403, detail="Insufficient permissions to unmute")
+        
+        await db.users.update_one(
+            {"user_id": action.target_user_id},
+            {"$set": {"is_muted": False, "mute_until": None}}
+        )
+        await log_action(mod.user_id, mod.display_name, "unmute", f"Unmuted {target_user['display_name']}", action.target_user_id, target_user['display_name'])
+    
+    return {"status": "success", "message": f"User {action.action}ed successfully"}
+
+@api_router.delete("/mod/posts/{post_id}")
+async def delete_post(post_id: str, reason: dict, mod: User = Depends(verify_moderator)):
+    post = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    await db.posts.delete_one({"post_id": post_id})
+    
+    post_owner = await db.users.find_one({"user_id": post['user_id']}, {"_id": 0})
+    await log_action(mod.user_id, mod.display_name, "delete_post", f"Deleted post by {post_owner['display_name']}: {reason.get('reason', 'No reason provided')}", post['user_id'], post_owner['display_name'])
+    
+    return {"status": "success", "message": "Post deleted"}
+
+@api_router.put("/mod/reports/{report_id}/resolve")
+async def resolve_report(report_id: str, status: str, mod: User = Depends(verify_moderator)):
+    await db.post_reports.update_one(
+        {"report_id": report_id},
+        {"$set": {"status": status}}
+    )
+    return {"status": "success"}
+
+# ============= MANAGEMENT PANEL =============
+
+@api_router.post("/management/assign-role")
+async def assign_role(assignment: RoleAssignment, manager: User = Depends(verify_management)):
+    target_user = await db.users.find_one({"user_id": assignment.user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Determine is_admin and is_moderator based on role
+    admin_roles = ["Administrator", "Head Administrator", "Chief Administrator", "Chief of Staff", "Community Manager", "Management", "Project Owner"]
+    mod_roles = ["Moderator", "Head Moderator", "Chief Moderator"]
+    
+    is_admin = assignment.role in admin_roles
+    is_moderator = assignment.role in mod_roles or is_admin
+    
+    await db.users.update_one(
+        {"user_id": assignment.user_id},
+        {"$set": {
+            "role": assignment.role,
+            "badges": assignment.badges,
+            "is_admin": is_admin,
+            "is_moderator": is_moderator
+        }}
+    )
+    
+    await log_action(manager.user_id, manager.display_name, "assign_role", f"Assigned role '{assignment.role}' to {target_user['display_name']}", assignment.user_id, target_user['display_name'])
+    
+    return {"status": "success", "message": "Role assigned successfully"}
+
+@api_router.get("/management/all-users-with-passwords")
+async def get_all_users_with_passwords(manager: User = Depends(verify_management)):
+    users = await db.users.find({}, {"_id": 0}).to_list(5000)
+    return users
+
+@api_router.get("/management/action-logs")
+async def get_action_logs(
+    manager: User = Depends(verify_admin),
+    search: str = None,
+    limit: int = 100
+):
+    query = {}
+    if search:
+        query = {
+            "$or": [
+                {"admin_name": {"$regex": search, "$options": "i"}},
+                {"target_user_name": {"$regex": search, "$options": "i"}},
+                {"action_type": {"$regex": search, "$options": "i"}},
+                {"details": {"$regex": search, "$options": "i"}}
+            ]
+        }
+    
+    logs = await db.action_logs.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    for log in logs:
+        if isinstance(log.get('created_at'), str):
+            log['created_at'] = datetime.fromisoformat(log['created_at'])
+    
+    return logs
+
+# ============= HELP CHAT SYSTEM =============
+
+@api_router.post("/help-chat/{registration_id}/message")
+async def send_help_message(registration_id: str, message: dict, user_type: str = "user"):
+    # Check if user or admin
+    sender_id = message.get('sender_id')
+    
+    help_msg = HelpChatMessage(
+        registration_id=registration_id,
+        sender_type=user_type,
+        sender_id=sender_id,
+        content=message['content']
+    )
+    
+    doc = help_msg.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.help_chat.insert_one(doc)
+    
+    return {"status": "success"}
+
+@api_router.get("/help-chat/{registration_id}/messages")
+async def get_help_messages(registration_id: str, limit: int = 100):
+    messages = await db.help_chat.find(
+        {"registration_id": registration_id},
+        {"_id": 0}
+    ).sort("created_at", 1).limit(limit).to_list(limit)
+    
+    for msg in messages:
+        if isinstance(msg.get('created_at'), str):
+            msg['created_at'] = datetime.fromisoformat(msg['created_at'])
+    
+    return messages
+
+@api_router.get("/admin/help-chats")
+async def get_all_help_chats(admin: User = Depends(verify_admin)):
+    # Get all rejected registrations with help chat messages
+    registrations = await db.registrations.find({"status": "rejected"}, {"_id": 0}).to_list(100)
+    
+    result = []
+    for reg in registrations:
+        message_count = await db.help_chat.count_documents({"registration_id": reg['reg_id']})
+        if message_count > 0:
+            result.append({
+                "registration": reg,
+                "message_count": message_count
+            })
+    
+    return result
 
 # WebSocket for real-time chat
 @app.websocket("/ws/{user_id}")
