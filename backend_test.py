@@ -404,6 +404,169 @@ class BISDHubAPITester:
             return True
         return False
 
+    def test_follow_user(self):
+        """Test following a user (admin)"""
+        if not self.user_token:
+            print("❌ User token required")
+            return False
+
+        success, response = self.run_test(
+            "Follow User",
+            "POST",
+            "users/ADMIN001/follow",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Successfully followed user")
+            return True
+        return False
+
+    def test_unfollow_user(self):
+        """Test unfollowing a user"""
+        if not self.user_token:
+            print("❌ User token required")
+            return False
+
+        success, response = self.run_test(
+            "Unfollow User",
+            "DELETE",
+            "users/ADMIN001/follow",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Successfully unfollowed user")
+            return True
+        return False
+
+    def test_get_user_by_id(self):
+        """Test getting user profile by ID number"""
+        if not self.user_token:
+            print("❌ User token required")
+            return False
+
+        success, response = self.run_test(
+            "Get User by ID",
+            "GET",
+            "users/ADMIN001",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Retrieved user profile for {response.get('display_name', 'Unknown')}")
+            return True
+        return False
+
+    def test_send_dm(self):
+        """Test sending a direct message"""
+        if not self.user_token or not self.admin_token:
+            print("❌ Both user and admin tokens required")
+            return False
+
+        # Get admin user ID first
+        admin_success, admin_response = self.run_test(
+            "Get Admin Profile",
+            "GET",
+            "users/me",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not admin_success:
+            return False
+        
+        admin_user_id = admin_response.get('user_id')
+        
+        success, response = self.run_test(
+            "Send Direct Message",
+            "POST",
+            f"dm/{admin_user_id}/send",
+            200,
+            data={"content": "Test DM from API testing"},
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Direct message sent successfully")
+            return True
+        return False
+
+    def test_get_dm_messages(self):
+        """Test getting DM messages with a specific user"""
+        if not self.user_token or not self.admin_token:
+            print("❌ Both user and admin tokens required")
+            return False
+
+        # Get admin user ID first
+        admin_success, admin_response = self.run_test(
+            "Get Admin Profile for DM",
+            "GET",
+            "users/me",
+            200,
+            headers={"Authorization": f"Bearer {self.admin_token}"}
+        )
+        
+        if not admin_success:
+            return False
+        
+        admin_user_id = admin_response.get('user_id')
+        
+        success, response = self.run_test(
+            "Get DM Messages",
+            "GET",
+            f"dm/{admin_user_id}/messages",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Retrieved {len(response)} DM messages")
+            return True
+        return False
+
+    def test_add_comment(self):
+        """Test adding a comment to a post"""
+        if not self.user_token or not self.test_post_id:
+            print("❌ User token and post ID required")
+            return False
+
+        success, response = self.run_test(
+            "Add Comment",
+            "POST",
+            f"posts/{self.test_post_id}/comment",
+            200,
+            data={"content": "This is a test comment from API testing"},
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Comment added successfully")
+            return True
+        return False
+
+    def test_get_user_posts(self):
+        """Test getting posts by a specific user"""
+        if not self.user_token:
+            print("❌ User token required")
+            return False
+
+        success, response = self.run_test(
+            "Get User Posts",
+            "GET",
+            f"posts/user/{self.test_user_data['id_number']}",
+            200,
+            headers={"Authorization": f"Bearer {self.user_token}"}
+        )
+        
+        if success:
+            print(f"✅ Retrieved {len(response)} posts for user")
+            return True
+        return False
+
 def main():
     print("🚀 Starting BISD HUB API Testing...")
     tester = BISDHubAPITester()
@@ -418,14 +581,21 @@ def main():
         ("User Login", tester.test_user_login),
         ("Get User Profile", tester.test_get_user_profile),
         ("Update Profile", tester.test_update_profile),
+        ("Get User by ID", tester.test_get_user_by_id),
+        ("Follow User", tester.test_follow_user),
+        ("Unfollow User", tester.test_unfollow_user),
         ("Create Post", tester.test_create_post),
         ("Get Feed", tester.test_get_feed),
+        ("Get User Posts", tester.test_get_user_posts),
         ("Like Post", tester.test_like_post),
         ("Unlike Post", tester.test_unlike_post),
+        ("Add Comment", tester.test_add_comment),
         ("Search Users", tester.test_search_users),
         ("Search Posts", tester.test_search_posts),
         ("Get Chat Messages", tester.test_get_chat_messages),
         ("Get DM Conversations", tester.test_get_dm_conversations),
+        ("Send Direct Message", tester.test_send_dm),
+        ("Get DM Messages", tester.test_get_dm_messages),
     ]
     
     failed_tests = []

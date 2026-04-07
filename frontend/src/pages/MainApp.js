@@ -29,6 +29,7 @@ const MainApp = ({ user, onLogout }) => {
   const [dmMessages, setDmMessages] = useState([]);
   const [newDMMessage, setNewDMMessage] = useState('');
   const [ws, setWs] = useState(null);
+  const [wsReady, setWsReady] = useState(false);
   const navigate = useNavigate();
   const chatEndRef = useRef(null);
 
@@ -64,6 +65,7 @@ const MainApp = ({ user, onLogout }) => {
 
     socket.onopen = () => {
       console.log('WebSocket connected');
+      setWsReady(true);
     };
 
     socket.onmessage = (event) => {
@@ -78,11 +80,20 @@ const MainApp = ({ user, onLogout }) => {
 
     socket.onerror = (error) => {
       console.error('WebSocket error:', error);
+      setWsReady(false);
+    };
+
+    socket.onclose = () => {
+      console.log('WebSocket closed');
+      setWsReady(false);
     };
 
     setWs(socket);
 
-    return () => socket.close();
+    return () => {
+      socket.close();
+      setWsReady(false);
+    };
   };
 
   const loadFeed = async () => {
@@ -144,7 +155,12 @@ const MainApp = ({ user, onLogout }) => {
   };
 
   const sendChatMessage = () => {
-    if (!newChatMessage.trim() || !ws) return;
+    if (!newChatMessage.trim() || !ws || !wsReady) {
+      if (!wsReady) {
+        toast.error('Chat connection not ready. Please wait...');
+      }
+      return;
+    }
 
     ws.send(JSON.stringify({
       type: 'chat_message',

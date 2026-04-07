@@ -393,22 +393,7 @@ async def update_profile(update: ProfileUpdate, user: User = Depends(get_current
     updated_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
     return User(**updated_user).model_dump(exclude={'password_hash'})
 
-# Get user profile by ID number
-@api_router.get("/users/{id_number}")
-async def get_user_profile(id_number: str, user: User = Depends(get_current_user)):
-    target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    user_obj = User(**target_user)
-    
-    # Check if profile is private
-    if not user_obj.is_profile_public and user_obj.user_id != user.user_id:
-        raise HTTPException(status_code=403, detail="Profile is private")
-    
-    return user_obj.model_dump(exclude={'password_hash'})
-
-# Search users
+# Search users (must come before /users/{id_number} to avoid route conflict)
 @api_router.get("/users/search")
 async def search_users(
     query: str = Query(..., min_length=1),
@@ -433,6 +418,21 @@ async def search_users(
             results.append(user_obj.model_dump(exclude={'password_hash'}))
     
     return results
+
+# Get user profile by ID number
+@api_router.get("/users/{id_number}")
+async def get_user_profile(id_number: str, user: User = Depends(get_current_user)):
+    target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user_obj = User(**target_user)
+    
+    # Check if profile is private
+    if not user_obj.is_profile_public and user_obj.user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="Profile is private")
+    
+    return user_obj.model_dump(exclude={'password_hash'})
 
 # Follow/Unfollow user
 @api_router.post("/users/{id_number}/follow")
