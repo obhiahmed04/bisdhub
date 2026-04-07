@@ -16,6 +16,7 @@ import { API_BASE } from '../utils/api';
 import NotificationBell from '../components/NotificationBell';
 import CreatePostDialog from '../components/CreatePostDialog';
 import CommentSection from '../components/CommentSection';
+import ReportDialog from '../components/ReportDialog';
 
 const MainApp = ({ user, onLogout }) => {
   const [activeTab, setActiveTab] = useState('home');
@@ -131,18 +132,6 @@ const MainApp = ({ user, onLogout }) => {
       loadFeed();
     } catch (error) {
       toast.error('Failed to update like');
-    }
-  };
-
-  const reportPost = async (postId) => {
-    const reason = prompt('Please enter the reason for reporting this post:');
-    if (!reason) return;
-
-    try {
-      await api.post(`/mod/posts/${postId}/report`, { reason });
-      toast.success('Post reported successfully');
-    } catch (error) {
-      toast.error('Failed to report post');
     }
   };
 
@@ -433,13 +422,7 @@ const MainApp = ({ user, onLogout }) => {
                           {post.comments?.length || 0}
                         </button>
                         {post.user?.user_id !== user.user_id && (
-                          <button
-                            onClick={() => reportPost(post.post_id)}
-                            className="flex items-center gap-2 text-[#111111] hover:text-[#FF6B6B] font-medium text-sm ml-auto"
-                          >
-                            <Flag size={18} weight="bold" />
-                            <span className="hidden md:inline">Report</span>
-                          </button>
+                          <ReportDialog postId={post.post_id} onReported={loadFeed} />
                         )}
                       </div>
                       

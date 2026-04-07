@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import './App.css';
 import LoginPage from './pages/LoginPage';
 import RegistrationPage from './pages/RegistrationPage';
+import PendingRegistrationPage from './pages/PendingRegistrationPage';
 import MainApp from './pages/MainApp';
 import AdminDashboard from './pages/AdminDashboard';
 import ModerationPanel from './pages/ModerationPanel';
@@ -34,6 +35,7 @@ function App() {
         <Routes>
           <Route path="/login" element={token ? <Navigate to="/" /> : <LoginPage onLogin={login} />} />
           <Route path="/register" element={<RegistrationPage />} />
+          <Route path="/pending-registration" element={<PendingRegistrationWrapper />} />
           <Route path="/" element={token ? <MainApp user={user} onLogout={logout} /> : <Navigate to="/login" />} />
           <Route path="/admin" element={token && user?.is_admin ? <AdminDashboard user={user} onLogout={logout} /> : <Navigate to="/" />} />
           <Route path="/moderation" element={token && user?.is_moderator ? <ModerationPanel user={user} onLogout={logout} /> : <Navigate to="/" />} />
@@ -44,6 +46,13 @@ function App() {
       <Toaster />
     </div>
   );
+}
+
+// Wrapper to access useLocation
+function PendingRegistrationWrapper() {
+  const location = useLocation();
+  const serialNumber = location.state?.serialNumber;
+  return <PendingRegistrationPage serialNumber={serialNumber} />;
 }
 
 export default App;

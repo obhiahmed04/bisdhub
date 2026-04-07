@@ -84,6 +84,7 @@ class RegistrationRequest(BaseModel):
 class Registration(BaseModel):
     model_config = ConfigDict(extra="ignore")
     reg_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    serial_number: Optional[int] = None
     id_number: str
     full_name: str
     date_of_birth: str
@@ -218,9 +219,11 @@ class ActionLog(BaseModel):
 class PostReport(BaseModel):
     model_config = ConfigDict(extra="ignore")
     report_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    serial_number: Optional[int] = None
     post_id: str
     reporter_id: str
     reason: str
+    category: str = "other"  # spam, harassment, inappropriate, misinformation, other
     status: str = "pending"  # pending, reviewed, resolved
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -394,12 +397,23 @@ async def register(reg_request: RegistrationRequest):
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
     
+    # Get next serial number
+    last_reg = await db.registrations.find_one({}, {"_id": 0, "serial_number": 1}, sort=[("serial_number", -1)])
+    next_serial = (last_reg.get('serial_number', 0) + 1) if last_reg else 1
+    
     registration = Registration(**reg_request.model_dump())
+    registration.serial_number = next_serial
+    
     doc = registration.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     
     await db.registrations.insert_one(doc)
-    return {"status": "success", "message": "Registration submitted for approval", "reg_id": registration.reg_id}
+    return {
+        "status": "success", 
+        "message": "Registration submitted for approval", 
+        "reg_id": registration.reg_id,
+        "serial_number": next_serial
+    }
 
 # Admin: Get pending registrations
 @api_router.get("/admin/registrations/pending")
@@ -651,6 +665,130 @@ async def get_following(id_number: str, user: User = Depends(get_current_user)):
             following.append(following_user)
     
     return following
+
+# Friend Request System
+@api_router.post("/friends/request/{id_number}")
+async def send_friend_request(id_number: str, user: User = Depends(get_current_user)):
+    if id_number == user.id_number:
+        raise HTTPException(status_code=400, detail="Cannot send friend request to yourself")
+    
+    target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if already friends
+    if target_user['user_id'] in user.friends:
+        raise HTTPException(status_code=400, detail="Already friends")
+    
+    # Check if request already sent
+    if target_user['user_id'] in user.friend_requests_sent:
+        raise HTTPException(status_code=400, detail="Friend request already sent")
+    
+    # Add to sent and received lists
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$addToSet": {"friend_requests_sent": target_user['user_id']}}
+    )
+    
+    await db.users.update_one(
+        {"user_id": target_user['user_id']},
+        {"$addToSet": {"friend_requests_received": user.user_id}}
+    )
+    
+    # Send notification
+    await send_notification(
+        target_user['user_id'],
+        "friend_request",
+        user.user_id,
+        f"{user.display_name} sent you a friend request"
+    )
+    
+    return {"status": "success", "message": "Friend request sent"}
+
+@api_router.post("/friends/accept/{user_id}")
+async def accept_friend_request(user_id: str, user: User = Depends(get_current_user)):
+    # Check if request exists
+    if user_id not in user.friend_requests_received:
+        raise HTTPException(status_code=400, detail="No friend request from this user")
+    
+    # Add to friends list for both users
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {
+            "$addToSet": {"friends": user_id},
+            "$pull": {"friend_requests_received": user_id}
+        }
+    )
+    
+    await db.users.update_one(
+        {"user_id": user_id},
+        {
+            "$addToSet": {"friends": user.user_id},
+            "$pull": {"friend_requests_sent": user.user_id}
+        }
+    )
+    
+    # Send notification
+    await send_notification(
+        user_id,
+        "friend_accept",
+        user.user_id,
+        f"{user.display_name} accepted your friend request"
+    )
+    
+    return {"status": "success", "message": "Friend request accepted"}
+
+@api_router.post("/friends/reject/{user_id}")
+async def reject_friend_request(user_id: str, user: User = Depends(get_current_user)):
+    # Remove from both lists
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$pull": {"friend_requests_received": user_id}}
+    )
+    
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$pull": {"friend_requests_sent": user.user_id}}
+    )
+    
+    return {"status": "success", "message": "Friend request rejected"}
+
+@api_router.delete("/friends/{user_id}")
+async def remove_friend(user_id: str, user: User = Depends(get_current_user)):
+    # Remove from both friends lists
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$pull": {"friends": user_id}}
+    )
+    
+    await db.users.update_one(
+        {"user_id": user_id},
+        {"$pull": {"friends": user.user_id}}
+    )
+    
+    return {"status": "success", "message": "Friend removed"}
+
+@api_router.get("/friends/requests")
+async def get_friend_requests(user: User = Depends(get_current_user)):
+    # Get all received friend requests with user details
+    requests = []
+    for requester_id in user.friend_requests_received:
+        requester = await db.users.find_one({"user_id": requester_id}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        if requester:
+            requests.append(requester)
+    
+    return requests
+
+@api_router.get("/friends/list")
+async def get_friends_list(user: User = Depends(get_current_user)):
+    # Get all friends with user details
+    friends = []
+    for friend_id in user.friends:
+        friend = await db.users.find_one({"user_id": friend_id}, {"_id": 0, "user_id": 1, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        if friend:
+            friends.append(friend)
+    
+    return friends
 
 # Posts
 @api_router.post("/posts")
@@ -989,16 +1127,22 @@ async def get_unread_count(user: User = Depends(get_current_user)):
 
 @api_router.post("/mod/posts/{post_id}/report")
 async def report_post(post_id: str, reason: dict, user: User = Depends(get_current_user)):
+    # Get next serial number
+    last_report = await db.post_reports.find_one({}, {"_id": 0, "serial_number": 1}, sort=[("serial_number", -1)])
+    next_serial = (last_report.get('serial_number', 0) + 1) if last_report else 1
+    
     report = PostReport(
+        serial_number=next_serial,
         post_id=post_id,
         reporter_id=user.user_id,
-        reason=reason['reason']
+        reason=reason.get('reason', ''),
+        category=reason.get('category', 'other')
     )
     doc = report.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.post_reports.insert_one(doc)
     
-    return {"status": "success", "message": "Post reported"}
+    return {"status": "success", "message": "Post reported", "serial_number": next_serial}
 
 @api_router.get("/mod/reports")
 async def get_reports(mod: User = Depends(verify_moderator), status: str = "pending"):
@@ -1095,19 +1239,45 @@ async def assign_role(assignment: RoleAssignment, manager: User = Depends(verify
     is_admin = assignment.role in admin_roles
     is_moderator = assignment.role in mod_roles or is_admin
     
+    # Auto-assign badges based on role
+    auto_badges = []
+    if assignment.role == "Project Owner":
+        auto_badges = ["Project Owner"]
+    elif assignment.role == "Management":
+        auto_badges = ["Management"]
+    elif assignment.role == "Community Manager":
+        auto_badges = ["Community Manager", "Admin Supervisor"]
+    elif assignment.role == "Chief of Staff":
+        auto_badges = ["Chief of Staff", "Admin Supervisor"]
+    elif assignment.role == "Chief Administrator":
+        auto_badges = ["Chief Administrator", "Super Admin"]
+    elif assignment.role == "Head Administrator":
+        auto_badges = ["Head Administrator"]
+    elif assignment.role == "Administrator":
+        auto_badges = ["Administrator"]
+    elif assignment.role == "Chief Moderator":
+        auto_badges = ["Chief Moderator", "Super Mod"]
+    elif assignment.role == "Head Moderator":
+        auto_badges = ["Head Moderator", "Super Mod"]
+    elif assignment.role == "Moderator":
+        auto_badges = ["Moderator"]
+    
+    # Merge auto badges with custom badges, remove duplicates
+    final_badges = list(set(auto_badges + assignment.badges))
+    
     await db.users.update_one(
         {"user_id": assignment.user_id},
         {"$set": {
             "role": assignment.role,
-            "badges": assignment.badges,
+            "badges": final_badges,
             "is_admin": is_admin,
             "is_moderator": is_moderator
         }}
     )
     
-    await log_action(manager.user_id, manager.display_name, "assign_role", f"Assigned role '{assignment.role}' to {target_user['display_name']}", assignment.user_id, target_user['display_name'])
+    await log_action(manager.user_id, manager.display_name, "assign_role", f"Assigned role '{assignment.role}' with badges {final_badges} to {target_user['display_name']}", assignment.user_id, target_user['display_name'])
     
-    return {"status": "success", "message": "Role assigned successfully"}
+    return {"status": "success", "message": "Role assigned successfully", "badges": final_badges}
 
 @api_router.get("/management/all-users-with-passwords")
 async def get_all_users_with_passwords(manager: User = Depends(verify_management)):

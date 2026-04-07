@@ -72,9 +72,10 @@ const RegistrationPage = () => {
 
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}/auth/register`, formData);
+      const response = await axios.post(`${API_BASE}/auth/register`, formData);
       toast.success('Registration submitted! Awaiting admin approval.');
-      setTimeout(() => navigate('/login'), 2000);
+      // Navigate to pending page with serial number
+      navigate('/pending-registration', { state: { serialNumber: response.data.serial_number } });
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Registration failed');
     } finally {
