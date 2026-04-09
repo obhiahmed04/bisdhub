@@ -38,6 +38,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   const [ws, setWs] = useState(null);
   const [wsReady, setWsReady] = useState(false);
   const [expandedComments, setExpandedComments] = useState({});
+  const [chatRooms, setChatRooms] = useState([]);
   const navigate = useNavigate();
   const location = useLocation();
   const chatEndRef = useRef(null);
@@ -47,6 +48,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   useEffect(() => {
     loadFeed();
     loadDMConversations();
+    loadChatRooms();
+    requestNotificationPermission();
     const cleanup = connectWebSocket();
     return cleanup;
   }, []);
@@ -224,6 +227,33 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     setActiveDMUser(targetUser);
   };
 
+  const requestNotificationPermission = () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  };
+
+  const loadChatRooms = async () => {
+    try {
+      const response = await api.get('/chat/rooms');
+      setChatRooms(response.data);
+    } catch (error) {
+      // Fallback
+      setChatRooms([{ id: 'general', name: 'General', color: '#3b82f6' }]);
+    }
+  };
+
+  const deletePost = async (postId) => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return;
+    try {
+      await api.delete(`/posts/${postId}`);
+      toast.success('Post deleted');
+      loadFeed();
+    } catch (error) {
+      toast.error('Failed to delete post');
+    }
+  };
+
   const repostPost = async (postId) => {
     try {
       await api.post(`/posts/${postId}/repost`);
@@ -243,21 +273,18 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     });
   };
 
-  const getChatRooms = () => {
-    const rooms = [{ id: 'general', name: 'General', color: '#3b82f6' }];
-    rooms.push({ id: 'boys_only', name: 'Boys Only', color: '#ef4444' });
-    rooms.push({ id: 'girls_only', name: 'Girls Only', color: '#ec4899' });
-    if (!user.is_ex_student) {
-      rooms.push({ id: `class_${user.current_class}`, name: `Class ${user.current_class}`, color: '#8b5cf6' });
-      rooms.push({ id: `section_${user.section}`, name: `Section ${user.section}`, color: '#f59e0b' });
-    }
-    if (user.is_ex_student) {
-      rooms.push({ id: 'ex_students', name: 'EX Students', color: '#a855f7' });
-    }
-    return rooms;
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return 'now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const formatTime = (dateStr) => {
+  const formatChatTime = (dateStr) => {
     const d = new Date(dateStr);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
@@ -424,9 +451,9 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                               <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold border border-[#111111] bg-[#2563EB] text-white">Official</span>
                             )}
                           </div>
-                          <p className="text-xs text-[#4B4B4B] cursor-pointer hover:underline"
+                          <p className="text-xs cursor-pointer hover:underline" style={{ color: 'var(--text-3)' }}
                             onClick={() => navigate(`/profile/${post.user?.id_number}`)}>
-                            @{post.user?.id_number} {post.serial_number && `#${post.serial_number}`}
+                            @{post.user?.id_number} {post.serial_number && <span className="badge-mono">#{post.serial_number}</span>} &middot; {formatTime(post.created_at)}
                           </p>
                         </div>
                       </div>
@@ -474,6 +501,12 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                         )}
                         {post.user_id !== user.user_id && (
                           <ReportDialog postId={post.post_id} onReported={loadFeed} />
+                        )}
+                        {(post.user_id === user.user_id || user.is_admin || user.is_moderator) && (
+                          <button onClick={() => deletePost(post.post_id)}
+                            className="flex items-center gap-1.5 font-medium text-[#4B4B4B] hover:text-[var(--red)]" data-testid={`delete-post-${post.post_id}`}>
+                            <span className="text-xs">Delete</span>
+                          </button>
                         )}
                       </div>
                       
@@ -552,13 +585,14 @@ const MainApp = ({ user, onLogout, updateUser }) => {
             <div className="w-48 md:w-56 bg-white border-r-2 border-[#111111] p-3 flex-shrink-0">
               <h2 className="text-sm font-black mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Chat Rooms</h2>
               <div className="space-y-1.5">
-                {getChatRooms().map((room) => (
+                {chatRooms.map((room) => (
                   <button key={room.id} data-testid={`chat-room-${room.id}`}
                     onClick={() => setActiveChatRoom(room.id)}
-                    className="w-full text-left px-3 py-2 rounded-lg font-bold border-2 border-[#111111] text-xs shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] transition-all"
+                    className="w-full text-left px-3 py-2 rounded-lg font-bold text-xs transition-all"
                     style={{
-                      backgroundColor: activeChatRoom === room.id ? room.color : 'white',
-                      color: activeChatRoom === room.id ? 'white' : '#111111'
+                      backgroundColor: activeChatRoom === room.id ? room.color : 'var(--bg-surface)',
+                      color: activeChatRoom === room.id ? 'white' : 'var(--text-1)',
+                      border: '1px solid var(--border)'
                     }}>
                     {room.name}
                   </button>
@@ -568,8 +602,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
 
             <div className="flex-1 flex flex-col p-4">
               <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] flex-1 flex flex-col p-4 overflow-hidden">
-                <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#D1D1D1]">
-                  <h3 className="font-bold text-sm">{getChatRooms().find(r => r.id === activeChatRoom)?.name || 'Chat'}</h3>
+                <div className="flex items-center justify-between mb-3 pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                  <h3 className="font-bold text-sm" style={{ color: 'var(--text-1)' }}>{chatRooms.find(r => r.id === activeChatRoom)?.name || 'Chat'}</h3>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${wsReady ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {wsReady ? 'Connected' : 'Reconnecting...'}
                   </span>
@@ -587,8 +621,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                             <p className="text-[10px] font-bold opacity-70 mb-0.5">{msg.user?.display_name}</p>
                           )}
                           <p className="text-sm">{msg.content}</p>
-                          <p className={`text-[10px] mt-0.5 ${msg.user_id === user.user_id ? 'text-white/60' : 'text-[#4B4B4B]'}`}>
-                            {formatTime(msg.created_at)}
+                          <p className={`text-[10px] mt-0.5 ${msg.user_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.user_id !== user.user_id ? 'var(--text-3)' : undefined }}>
+                            {formatChatTime(msg.created_at)}
                           </p>
                         </div>
                       </div>
@@ -677,8 +711,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                               : 'bg-[#F5F5F5] rounded-2xl rounded-bl-sm px-3 py-2'
                           }`}>
                             <p className="text-sm">{msg.content}</p>
-                            <p className={`text-[10px] mt-0.5 ${msg.sender_id === user.user_id ? 'text-white/60' : 'text-[#4B4B4B]'}`}>
-                              {formatTime(msg.created_at)}
+                            <p className={`text-[10px] mt-0.5 ${msg.sender_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.sender_id !== user.user_id ? 'var(--text-3)' : undefined }}>
+                              {formatChatTime(msg.created_at)}
                             </p>
                           </div>
                         </div>

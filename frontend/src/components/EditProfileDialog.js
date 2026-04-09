@@ -75,7 +75,6 @@ const EditProfileDialog = ({ user, onProfileUpdated }) => {
     setLoading(true);
     try {
       const updateData = {};
-      if (formData.display_name !== user.display_name) updateData.display_name = formData.display_name;
       if (formData.bio !== user.bio) updateData.bio = formData.bio;
       if (formData.profile_picture !== user.profile_picture) updateData.profile_picture = formData.profile_picture;
       if (formData.banner_image !== user.banner_image) updateData.banner_image = formData.banner_image;
@@ -153,14 +152,13 @@ const EditProfileDialog = ({ user, onProfileUpdated }) => {
                 onChange={(e) => e.target.files[0] && uploadImage(e.target.files[0], 'pfp')} />
             </div>
 
-            {/* Display Name */}
+            {/* Display Name - Read Only */}
             <div>
               <label className="text-xs font-bold uppercase tracking-wider mb-2 block">Display Name</label>
-              <Input value={formData.display_name}
-                onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                className="border-2 border-[#111111] rounded-xl px-3 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]"
-                placeholder="Your display name" />
-              <p className="text-[10px] text-[#4B4B4B] mt-1">Full name: {user.full_name}</p>
+              <p className="text-sm px-3 py-2 rounded-xl" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-1)' }}>
+                {user.display_name}
+              </p>
+              <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>Name can only be changed by an admin. Contact support.</p>
             </div>
 
             {/* Bio */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import LoginPage from './pages/LoginPage';
 import RegistrationPage from './pages/RegistrationPage';
@@ -81,9 +81,7 @@ function App() {
 }
 
 function PendingRegistrationWrapper() {
-  const location = useLocation();
-  const serialNumber = location.state?.serialNumber;
-  return <PendingRegistrationPage serialNumber={serialNumber} />;
+  return <PendingRegistrationPage />;
 }
 
 export default App;

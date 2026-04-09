@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { Eye, EyeSlash, Key } from '@phosphor-icons/react';
 import axios from 'axios';
 import { API_BASE } from '../utils/api';
 
@@ -11,97 +13,133 @@ const LoginPage = ({ onLogin }) => {
   const [idNumber, setIdNumber] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetStep, setResetStep] = useState(1);
+  const [resetId, setResetId] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const response = await axios.post(`${API_BASE}/auth/login`, {
-        id_number: idNumber,
-        password: password
-      });
-
-      toast.success('Login successful!');
-      onLogin(response.data.token, response.data.user);
-      
-      if (response.data.user.is_admin) {
-        navigate('/admin');
-      } else {
-        navigate('/');
-      }
+      const response = await axios.post(`${API_BASE}/auth/login`, { id_number: idNumber, password });
+      const { token, user } = response.data;
+      onLogin(token, user);
+      navigate('/');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
+      const detail = error.response?.data?.detail || 'Login failed';
+      if (detail.includes('pending')) {
+        toast.info('Your registration is still pending approval');
+        navigate('/pending-registration');
+      } else {
+        toast.error(detail);
+      }
+    } finally { setLoading(false); }
+  };
+
+  const requestReset = async () => {
+    try {
+      const response = await axios.post(`${API_BASE}/auth/password-reset/request`, { id_number: resetId });
+      toast.success(response.data.message);
+      if (response.data.dev_otp) toast.info(`Dev OTP: ${response.data.dev_otp}`);
+      setResetStep(2);
+    } catch (error) { toast.error(error.response?.data?.detail || 'Failed to send reset OTP'); }
+  };
+
+  const verifyReset = async () => {
+    try {
+      await axios.post(`${API_BASE}/auth/password-reset/verify`, { id_number: resetId, otp: resetOtp, new_password: newPassword });
+      toast.success('Password reset! You can now login.');
+      setResetOpen(false);
+      setResetStep(1);
+    } catch (error) { toast.error(error.response?.data?.detail || 'Reset failed'); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" 
-         style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1592669282789-cf5eac5807e5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHw0fHxtb2Rlcm4lMjBoaWdoJTIwc2Nob29sJTIwY2FtcHVzJTIwYnVpbGRpbmd8ZW58MHx8fHwxNzc1NTczNDk2fDA&ixlib=rb-4.1.0&q=85)', backgroundSize: 'cover', backgroundPosition: 'center' }}>
-      <div className="w-full max-w-md">
-        <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-4xl font-black tracking-tighter mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>BISD HUB</h1>
-            <p className="text-base font-medium text-[#4B4B4B]">Welcome back! Login to continue</p>
-          </div>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-base)' }}>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <h1 className="heading text-4xl font-black tracking-tighter" style={{ color: 'var(--text-1)' }}>BISD HUB</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>Your school community</p>
+        </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
+        <div className="card p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <Label htmlFor="id-number" className="text-sm font-bold uppercase tracking-wider mb-2 block">ID Number</Label>
-              <Input
-                id="id-number"
-                data-testid="login-id-input"
-                type="text"
-                value={idNumber}
-                onChange={(e) => setIdNumber(e.target.value)}
-                className="bg-white border-2 border-[#111111] rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-4 focus:ring-[#A7F3D0] focus:border-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]"
-                placeholder="Enter your ID number"
-                required
-              />
+              <Label className="badge-mono mb-2 block" style={{ color: 'var(--text-2)' }}>ID Number</Label>
+              <Input data-testid="login-id-input" value={idNumber} onChange={(e) => setIdNumber(e.target.value)}
+                className="input-styled" placeholder="Enter your ID number" />
             </div>
-
             <div>
-              <Label htmlFor="password" className="text-sm font-bold uppercase tracking-wider mb-2 block">Password</Label>
-              <Input
-                id="password"
-                data-testid="login-password-input"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="bg-white border-2 border-[#111111] rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-4 focus:ring-[#A7F3D0] focus:border-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]"
-                placeholder="Enter your password"
-                required
-              />
+              <Label className="badge-mono mb-2 block" style={{ color: 'var(--text-2)' }}>Password</Label>
+              <div className="relative">
+                <Input data-testid="login-password-input" type={showPassword ? 'text' : 'password'} value={password}
+                  onChange={(e) => setPassword(e.target.value)} className="input-styled pr-10" placeholder="Enter your password" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2"
+                  style={{ color: 'var(--text-3)' }}>
+                  {showPassword ? <EyeSlash size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
             </div>
-
-            <Button
-              data-testid="login-submit-button"
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#2563EB] text-[#FDFBF7] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] active:translate-y-[4px] active:translate-x-[4px] active:shadow-none transition-all duration-75 font-bold py-3 rounded-xl"
-            >
+            <Button data-testid="login-submit-button" type="submit" disabled={loading}
+              className="w-full btn btn-primary py-3">
               {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
 
-          <div className="mt-6 text-center space-y-2">
-            <p className="text-sm font-medium text-[#4B4B4B]">
-              New to BISD HUB?{' '}
-              <Link to="/register" className="text-[#2563EB] font-bold hover:underline" data-testid="register-link">
-                Register here
-              </Link>
-            </p>
-            <p className="text-sm font-medium text-[#4B4B4B]">
-              <Link to="/pending-registration" className="text-[#2563EB] font-bold hover:underline" data-testid="check-status-link">
-                Check registration status
-              </Link>
-            </p>
+          <div className="mt-4 text-center">
+            <button onClick={() => setResetOpen(true)} className="text-xs font-semibold hover:underline" style={{ color: 'var(--blue)' }}>
+              Forgot password?
+            </button>
           </div>
         </div>
+
+        <div className="mt-4 text-center space-y-2">
+          <p className="text-sm" style={{ color: 'var(--text-2)' }}>
+            New here? <Link to="/register" data-testid="register-link" className="font-bold hover:underline" style={{ color: 'var(--blue)' }}>Register</Link>
+          </p>
+          <p className="text-sm" style={{ color: 'var(--text-2)' }}>
+            <Link to="/pending-registration" data-testid="check-status-link" className="font-bold hover:underline" style={{ color: 'var(--text-3)' }}>
+              Check registration status
+            </Link>
+          </p>
+        </div>
       </div>
+
+      {/* Password Reset Dialog */}
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="card max-w-sm" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <DialogHeader>
+            <DialogTitle className="heading text-lg font-black flex items-center gap-2" style={{ color: 'var(--text-1)' }}>
+              <Key size={18} weight="bold" /> Reset Password
+            </DialogTitle>
+            <DialogDescription style={{ color: 'var(--text-2)' }}>
+              {resetStep === 1 ? 'Enter your ID number to receive a reset OTP via email' : 'Enter the OTP and your new password'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {resetStep === 1 ? (
+            <div className="space-y-3 py-2">
+              <Input value={resetId} onChange={(e) => setResetId(e.target.value)} className="input-styled" placeholder="Your ID number" />
+              <Button onClick={requestReset} className="w-full btn btn-primary py-2.5">Send Reset OTP</Button>
+              <p className="text-xs text-center" style={{ color: 'var(--text-3)' }}>
+                Or <button onClick={() => { setResetOpen(false); navigate('/pending-registration'); }} className="font-bold hover:underline" style={{ color: 'var(--blue)' }}>
+                  contact admin
+                </button> for help
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 py-2">
+              <Input value={resetOtp} onChange={(e) => setResetOtp(e.target.value)} className="input-styled" placeholder="6-digit OTP" />
+              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="input-styled" placeholder="New password" />
+              <Button onClick={verifyReset} className="w-full btn btn-primary py-2.5">Reset Password</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
