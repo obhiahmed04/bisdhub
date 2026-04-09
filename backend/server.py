@@ -92,14 +92,15 @@ manager = ConnectionManager()
 class RegistrationRequest(BaseModel):
     id_number: str
     full_name: str
-    date_of_birth: str
-    current_class: str
-    section: str
+    date_of_birth: str  # ISO date string from calendar picker
+    current_class: str  # "1"-"12" for current students
+    section: str  # B1, B2, G1, G2
     email: EmailStr
     phone_number: Optional[str] = None
     is_ex_student: bool
-    date_of_leaving: Optional[str] = None
-    last_class: Optional[str] = None
+    date_of_leaving: Optional[str] = None  # ISO date for ex-students
+    last_class: Optional[str] = None  # Last class at BISD
+    current_status: Optional[str] = None  # College, University, Higher Studies, Graduated (ex-students only)
 
 class Registration(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -115,9 +116,11 @@ class Registration(BaseModel):
     is_ex_student: bool
     date_of_leaving: Optional[str] = None
     last_class: Optional[str] = None
+    current_status: Optional[str] = None
     status: str = "pending"  # pending, approved, rejected
     rejection_reason: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    editable_until: Optional[str] = None  # ISO datetime - 10 min edit window
     email_verified: bool = False
     phone_verified: bool = False
 
@@ -143,6 +146,7 @@ class User(BaseModel):
     is_ex_student: bool
     date_of_leaving: Optional[str] = None
     last_class: Optional[str] = None
+    current_status: Optional[str] = None
     password_hash: str
     profile_picture: Optional[str] = None
     banner_image: Optional[str] = None
@@ -152,13 +156,15 @@ class User(BaseModel):
     is_profile_public: bool = True
     is_followers_public: bool = True
     is_following_public: bool = True
+    is_friends_public: bool = True
     is_admin: bool = False
     is_moderator: bool = False
     is_banned: bool = False
     is_muted: bool = False
     ban_reason: Optional[str] = None
     mute_until: Optional[str] = None
-    registration_status: str = "approved"  # approved, banned, rejected, pending
+    registration_status: str = "approved"
+    push_notifications_enabled: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     followers: List[str] = Field(default_factory=list)
     following: List[str] = Field(default_factory=list)
@@ -185,17 +191,25 @@ class Post(BaseModel):
 class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="ignore")
     message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    chat_room: str  # general, boys_only, girls_only, class_X, section_X_Y, ex_students
+    serial_number: Optional[int] = None
+    chat_room: str
     user_id: str
     content: str
+    reply_to: Optional[str] = None  # message_id being replied to
+    reactions: Dict[str, List[str]] = Field(default_factory=dict)  # emoji -> [user_ids]
+    is_gif: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class DirectMessage(BaseModel):
     model_config = ConfigDict(extra="ignore")
     dm_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    serial_number: Optional[int] = None
     sender_id: str
     receiver_id: str
     content: str
+    images: List[str] = Field(default_factory=list)
+    is_gif: bool = False
+    reply_to: Optional[str] = None
     read: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -206,14 +220,14 @@ class AdminAction(BaseModel):
     password: Optional[str] = None  # Required only for approve
 
 class ProfileUpdate(BaseModel):
-    display_name: Optional[str] = None
-    full_name: Optional[str] = None
     bio: Optional[str] = None
     profile_picture: Optional[str] = None
     banner_image: Optional[str] = None
     is_profile_public: Optional[bool] = None
     is_followers_public: Optional[bool] = None
     is_following_public: Optional[bool] = None
+    is_friends_public: Optional[bool] = None
+    push_notifications_enabled: Optional[bool] = None
 
 class PostCreate(BaseModel):
     content: str
@@ -226,20 +240,23 @@ class CommentCreate(BaseModel):
 class Notification(BaseModel):
     model_config = ConfigDict(extra="ignore")
     notification_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str  # Who receives the notification
-    type: str  # like, comment, follow, dm, mention
-    from_user_id: str  # Who triggered the notification
+    serial_number: Optional[int] = None
+    user_id: str
+    type: str  # like, comment, follow, dm, mention, friend_request, friend_accept, repost, punishment
+    from_user_id: str
     content: str
     post_id: Optional[str] = None
+    target_url: Optional[str] = None  # URL to navigate to when clicked
     read: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ActionLog(BaseModel):
     model_config = ConfigDict(extra="ignore")
     log_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    serial_number: Optional[int] = None
     admin_id: str
     admin_name: str
-    action_type: str  # approve, reject, ban, unban, mute, unmute, delete_post, assign_role
+    action_type: str
     target_user_id: Optional[str] = None
     target_user_name: Optional[str] = None
     details: str
@@ -264,6 +281,31 @@ class HelpChatMessage(BaseModel):
     sender_id: str
     content: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class PasswordResetRequest(BaseModel):
+    id_number: str
+    email: Optional[EmailStr] = None
+
+class PasswordResetVerify(BaseModel):
+    id_number: str
+    otp: str
+    new_password: str
+
+class AdminEditUser(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    current_class: Optional[str] = None
+    section: Optional[str] = None
+    bio: Optional[str] = None
+    badges: Optional[List[str]] = None
+
+class ChatMessageReport(BaseModel):
+    message_id: str
+    chat_room: str
+    reason: str
+    category: str = "other"
 
 class RoleAssignment(BaseModel):
     user_id: str
@@ -315,7 +357,11 @@ async def verify_admin_supervisor(user: User = Depends(get_current_user)):
     return user
 
 async def log_action(admin_id: str, admin_name: str, action_type: str, details: str, target_user_id: str = None, target_user_name: str = None):
+    last_log = await db.action_logs.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_log.get('serial_number', 0) + 1) if last_log else 1
+    
     log = ActionLog(
+        serial_number=next_serial,
         admin_id=admin_id,
         admin_name=admin_name,
         action_type=action_type,
@@ -327,20 +373,28 @@ async def log_action(admin_id: str, admin_name: str, action_type: str, details: 
     doc['created_at'] = doc['created_at'].isoformat()
     await db.action_logs.insert_one(doc)
 
-async def send_notification(user_id: str, notification_type: str, from_user_id: str, content: str, post_id: str = None):
+async def send_notification(user_id: str, notification_type: str, from_user_id: str, content: str, post_id: str = None, target_url: str = None):
+    last_notif = await db.notifications.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_notif.get('serial_number', 0) + 1) if last_notif else 1
+    
     notification = Notification(
+        serial_number=next_serial,
         user_id=user_id,
         type=notification_type,
         from_user_id=from_user_id,
         content=content,
-        post_id=post_id
+        post_id=post_id,
+        target_url=target_url
     )
     doc = notification.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.notifications.insert_one(doc)
     
     # Send via WebSocket if user is online
-    await manager.send_personal_message(doc, user_id)
+    await manager.send_personal_message({
+        "type": "notification",
+        "notification": doc
+    }, user_id)
 
 async def send_otp_email(email: str, otp: str):
     html_content = f"""
@@ -409,6 +463,33 @@ async def send_status_email(email: str, name: str, status: str, reason: str = No
 
 # ============= ROUTES =============
 
+async def broadcast_punishment(message: str):
+    """Broadcast staff punishment announcements to General chat."""
+    last_msg = await db.chat_messages.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_msg.get('serial_number', 0) + 1) if last_msg else 1
+    
+    system_msg = ChatMessage(
+        serial_number=next_serial,
+        chat_room="general",
+        user_id="SYSTEM",
+        content=message
+    )
+    doc = system_msg.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.chat_messages.insert_one(doc)
+    
+    await manager.broadcast_to_room({
+        "type": "chat_message",
+        "message_id": doc['message_id'],
+        "serial_number": next_serial,
+        "chat_room": "general",
+        "user_id": "SYSTEM",
+        "content": message,
+        "created_at": doc['created_at'],
+        "is_system": True,
+        "user": {"display_name": "SYSTEM", "profile_picture": None}
+    }, "general")
+
 @api_router.get("/")
 async def root():
     return {"message": "BISD HUB API"}
@@ -473,6 +554,7 @@ async def register(reg_request: RegistrationRequest):
     
     registration = Registration(**reg_request.model_dump())
     registration.serial_number = next_serial
+    registration.editable_until = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
     
     doc = registration.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
@@ -482,7 +564,9 @@ async def register(reg_request: RegistrationRequest):
         "status": "success", 
         "message": "Registration submitted for approval", 
         "reg_id": registration.reg_id,
-        "serial_number": next_serial
+        "serial_number": next_serial,
+        "editable_until": registration.editable_until,
+        "registration": {k: v for k, v in doc.items() if k not in ['_id']}
     }
 
 # Admin: Get pending registrations
@@ -519,6 +603,7 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
             is_ex_student=registration['is_ex_student'],
             date_of_leaving=registration.get('date_of_leaving'),
             last_class=registration.get('last_class'),
+            current_status=registration.get('current_status'),
             password_hash=password_hash
         )
         
@@ -765,6 +850,10 @@ async def send_friend_request(id_number: str, user: User = Depends(get_current_u
     target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
+    
+    # Must follow the user first
+    if target_user['user_id'] not in user.following:
+        raise HTTPException(status_code=400, detail="You must follow this user before sending a friend request")
     
     # Check if already friends
     if target_user['user_id'] in user.friends:
@@ -1122,25 +1211,37 @@ async def search_posts(query: str = Query(..., min_length=1), user: User = Depen
 # Global Chat
 @api_router.get("/chat/{chat_room}/messages")
 async def get_chat_messages(chat_room: str, user: User = Depends(get_current_user), limit: int = 50):
+    section = user.section.upper() if user.section else ""
+    is_boy = section.startswith('B')
+    is_girl = section.startswith('G')
+    
     # Verify user has access to chat room
-    if chat_room == "boys_only" and not user.section.endswith(("B1", "B2")):
-        if not user.is_ex_student:
-            raise HTTPException(status_code=403, detail="Access denied")
-    elif chat_room == "girls_only" and not user.section.endswith(("G1", "G2")):
-        if not user.is_ex_student:
-            raise HTTPException(status_code=403, detail="Access denied")
+    if chat_room == "boys_only" and not is_boy:
+        raise HTTPException(status_code=403, detail="Access denied - Boys Only")
+    elif chat_room == "girls_only" and not is_girl:
+        raise HTTPException(status_code=403, detail="Access denied - Girls Only")
     elif chat_room.startswith("class_") and user.is_ex_student:
         raise HTTPException(status_code=403, detail="Ex-students cannot access class chats")
     elif chat_room == "ex_students" and not user.is_ex_student:
         raise HTTPException(status_code=403, detail="Only ex-students can access this chat")
     
-    messages = await db.chat_messages.find({"chat_room": chat_room}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    # Filter messages: only show last 24 hours for normal view
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    messages = await db.chat_messages.find(
+        {"chat_room": chat_room, "created_at": {"$gte": cutoff}},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
     
     for msg in messages:
-        if isinstance(msg.get('created_at'), str):
-            msg['created_at'] = datetime.fromisoformat(msg['created_at'])
-        msg_user = await db.users.find_one({"user_id": msg['user_id']}, {"_id": 0, "display_name": 1, "profile_picture": 1})
-        msg['user'] = msg_user
+        msg_user = await db.users.find_one({"user_id": msg['user_id']}, {"_id": 0, "display_name": 1, "profile_picture": 1, "id_number": 1, "badges": 1, "role": 1})
+        msg['user'] = msg_user or {"display_name": "SYSTEM", "profile_picture": None}
+        
+        # Get reply data if present
+        if msg.get('reply_to'):
+            reply_msg = await db.chat_messages.find_one({"message_id": msg['reply_to']}, {"_id": 0, "content": 1, "user_id": 1})
+            if reply_msg:
+                reply_user = await db.users.find_one({"user_id": reply_msg['user_id']}, {"_id": 0, "display_name": 1})
+                msg['reply_data'] = {"content": reply_msg['content'], "user": reply_user}
     
     return list(reversed(messages))
 
@@ -1197,12 +1298,38 @@ async def get_dm_messages(other_user_id: str, user: User = Depends(get_current_u
     
     return messages
 
+# DM search
+@api_router.get("/dm/search")
+async def search_dms(query: str = "", user: User = Depends(get_current_user)):
+    if not query.strip():
+        return []
+    
+    results = await db.direct_messages.find({
+        "$and": [
+            {"$or": [{"sender_id": user.user_id}, {"receiver_id": user.user_id}]},
+            {"content": {"$regex": query, "$options": "i"}}
+        ]
+    }, {"_id": 0}).sort("created_at", -1).limit(20).to_list(20)
+    
+    for msg in results:
+        other_id = msg['receiver_id'] if msg['sender_id'] == user.user_id else msg['sender_id']
+        other_user = await db.users.find_one({"user_id": other_id}, {"_id": 0, "display_name": 1, "id_number": 1, "profile_picture": 1})
+        msg['other_user'] = other_user
+    
+    return results
+
 @api_router.post("/dm/{receiver_id}/send")
 async def send_dm(receiver_id: str, message: dict, user: User = Depends(get_current_user)):
+    last_dm = await db.direct_messages.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_dm.get('serial_number', 0) + 1) if last_dm else 1
+    
     dm = DirectMessage(
+        serial_number=next_serial,
         sender_id=user.user_id,
         receiver_id=receiver_id,
-        content=message['content']
+        content=message.get('content', ''),
+        images=message.get('images', []),
+        is_gif=message.get('is_gif', False)
     )
     
     doc = dm.model_dump()
@@ -1321,8 +1448,11 @@ async def moderate_user(action: ModerationAction, mod: User = Depends(verify_mod
         )
         await log_action(mod.user_id, mod.display_name, "ban", f"Banned {target_user['display_name']}: {action.reason}", action.target_user_id, target_user['display_name'])
         
+        # Broadcast punishment to General chat
+        punishment_msg = f"{mod.role} - {mod.id_number} {mod.display_name} has BANNED {target_user.get('id_number')} {target_user['display_name']}. Reason: {action.reason}"
+        await broadcast_punishment(punishment_msg)
+        
     elif action.action == "unban":
-        # Check if mod has unban permission
         if mod.role not in ["Chief Moderator", "Head Moderator", "Moderator", "Administrator", "Head Administrator", "Chief Administrator", "Chief of Staff", "Community Manager", "Management", "Project Owner"]:
             raise HTTPException(status_code=403, detail="Insufficient permissions to unban")
         
@@ -1333,12 +1463,17 @@ async def moderate_user(action: ModerationAction, mod: User = Depends(verify_mod
         await log_action(mod.user_id, mod.display_name, "unban", f"Unbanned {target_user['display_name']}", action.target_user_id, target_user['display_name'])
         
     elif action.action == "mute":
-        mute_until = datetime.now(timezone.utc) + timedelta(hours=action.mute_duration_hours or 24)
+        duration = action.mute_duration_hours or 24
+        mute_until = datetime.now(timezone.utc) + timedelta(hours=duration)
         await db.users.update_one(
             {"user_id": action.target_user_id},
             {"$set": {"is_muted": True, "mute_until": mute_until.isoformat()}}
         )
-        await log_action(mod.user_id, mod.display_name, "mute", f"Muted {target_user['display_name']} for {action.mute_duration_hours} hours", action.target_user_id, target_user['display_name'])
+        await log_action(mod.user_id, mod.display_name, "mute", f"Muted {target_user['display_name']} for {duration} hours", action.target_user_id, target_user['display_name'])
+        
+        # Broadcast punishment to General chat
+        punishment_msg = f"{mod.role} - {mod.id_number} {mod.display_name} has MUTED {target_user.get('id_number')} {target_user['display_name']} for {duration} hours. Reason: {action.reason}"
+        await broadcast_punishment(punishment_msg)
         
     elif action.action == "unmute":
         if mod.role not in ["Chief Moderator", "Head Moderator", "Moderator", "Administrator", "Head Administrator", "Chief Administrator", "Chief of Staff", "Community Manager", "Management", "Project Owner"]:
@@ -1519,36 +1654,93 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 manager.join_room(user_id, data['room'])
             
             elif data['type'] == 'chat_message':
-                # Save to database
+                # Spam check
+                if check_spam(user_id):
+                    await manager.send_personal_message({"type": "error", "message": "You're sending messages too fast. Please wait."}, user_id)
+                    continue
+                
+                # Get serial number
+                last_msg = await db.chat_messages.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+                next_serial = (last_msg.get('serial_number', 0) + 1) if last_msg else 1
+                
                 chat_msg = ChatMessage(
+                    serial_number=next_serial,
                     chat_room=data['chat_room'],
                     user_id=user_id,
-                    content=data['content']
+                    content=data['content'],
+                    reply_to=data.get('reply_to'),
+                    is_gif=data.get('is_gif', False)
                 )
                 doc = chat_msg.model_dump()
                 doc['created_at'] = doc['created_at'].isoformat()
                 await db.chat_messages.insert_one(doc)
                 
-                # Get user info
-                ws_user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "display_name": 1, "profile_picture": 1})
+                ws_user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "display_name": 1, "profile_picture": 1, "id_number": 1, "badges": 1, "role": 1})
                 
-                # Broadcast to room members only
+                # Get reply message if replying
+                reply_data = None
+                if data.get('reply_to'):
+                    reply_msg = await db.chat_messages.find_one({"message_id": data['reply_to']}, {"_id": 0, "content": 1, "user_id": 1})
+                    if reply_msg:
+                        reply_user = await db.users.find_one({"user_id": reply_msg['user_id']}, {"_id": 0, "display_name": 1})
+                        reply_data = {"content": reply_msg['content'], "user": reply_user}
+                
                 broadcast_data = {
                     "type": "chat_message",
                     "message_id": doc['message_id'],
+                    "serial_number": next_serial,
                     "chat_room": doc['chat_room'],
                     "user_id": user_id,
                     "content": doc['content'],
                     "created_at": doc['created_at'],
+                    "is_gif": doc.get('is_gif', False),
+                    "reply_to": doc.get('reply_to'),
+                    "reply_data": reply_data,
+                    "reactions": {},
                     "user": ws_user
                 }
                 await manager.broadcast_to_room(broadcast_data, data['chat_room'])
             
+            elif data['type'] == 'reaction':
+                # Add reaction to message
+                msg_id = data['message_id']
+                emoji = data['emoji']
+                msg = await db.chat_messages.find_one({"message_id": msg_id}, {"_id": 0})
+                if msg:
+                    reactions = msg.get('reactions', {})
+                    if emoji not in reactions:
+                        reactions[emoji] = []
+                    if user_id in reactions[emoji]:
+                        reactions[emoji].remove(user_id)
+                    else:
+                        reactions[emoji].append(user_id)
+                    if not reactions[emoji]:
+                        del reactions[emoji]
+                    await db.chat_messages.update_one({"message_id": msg_id}, {"$set": {"reactions": reactions}})
+                    
+                    await manager.broadcast_to_room({
+                        "type": "reaction_update",
+                        "message_id": msg_id,
+                        "reactions": reactions
+                    }, msg['chat_room'])
+            
             elif data['type'] == 'dm':
+                # Spam check
+                if check_spam(user_id):
+                    await manager.send_personal_message({"type": "error", "message": "You're sending messages too fast."}, user_id)
+                    continue
+                
+                last_dm = await db.direct_messages.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+                next_dm_serial = (last_dm.get('serial_number', 0) + 1) if last_dm else 1
+                
                 dm = DirectMessage(
+                    serial_number=next_dm_serial,
                     sender_id=user_id,
                     receiver_id=data['receiver_id'],
-                    content=data['content']
+                    content=data['content'],
+                    images=data.get('images', []),
+                    is_gif=data.get('is_gif', False),
+                    reply_to=data.get('reply_to')
                 )
                 doc = dm.model_dump()
                 doc['created_at'] = doc['created_at'].isoformat()
@@ -1557,15 +1749,16 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 dm_data = {
                     "type": "dm",
                     "dm_id": doc['dm_id'],
+                    "serial_number": next_dm_serial,
                     "sender_id": user_id,
                     "receiver_id": data['receiver_id'],
                     "content": doc['content'],
+                    "images": doc.get('images', []),
+                    "is_gif": doc.get('is_gif', False),
                     "created_at": doc['created_at'],
                     "read": False
                 }
-                # Send to receiver
                 await manager.send_personal_message(dm_data, data['receiver_id'])
-                # Echo back to sender
                 await manager.send_personal_message(dm_data, user_id)
     
     except WebSocketDisconnect:
@@ -1606,13 +1799,201 @@ async def get_upload(filename: str):
 async def check_registration_status(id_number: str):
     reg = await db.registrations.find_one({"id_number": id_number}, {"_id": 0})
     if not reg:
+        # Also check if user already exists (approved)
+        user_exists = await db.users.find_one({"id_number": id_number}, {"_id": 0})
+        if user_exists:
+            return {"status": "approved", "message": "Your account has been approved. Please login."}
         return {"status": "not_found"}
     return {
         "status": reg['status'],
         "reg_id": reg['reg_id'],
         "serial_number": reg.get('serial_number'),
-        "rejection_reason": reg.get('rejection_reason')
+        "rejection_reason": reg.get('rejection_reason'),
+        "editable_until": reg.get('editable_until'),
+        "registration": {k: v for k, v in reg.items() if k not in ['_id']}
     }
+
+# Edit registration within 10-minute window
+@api_router.put("/auth/registration/{reg_id}")
+async def edit_registration(reg_id: str, updates: dict):
+    reg = await db.registrations.find_one({"reg_id": reg_id}, {"_id": 0})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if reg['status'] != 'pending':
+        raise HTTPException(status_code=400, detail="Registration already processed")
+    
+    editable_until = reg.get('editable_until')
+    if editable_until:
+        deadline = datetime.fromisoformat(editable_until)
+        if datetime.now(timezone.utc) > deadline:
+            raise HTTPException(status_code=400, detail="Edit window has expired (10 minutes)")
+    
+    allowed_fields = ['full_name', 'date_of_birth', 'current_class', 'section', 'email', 'phone_number', 'is_ex_student', 'date_of_leaving', 'last_class', 'current_status']
+    update_data = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if update_data:
+        await db.registrations.update_one({"reg_id": reg_id}, {"$set": update_data})
+    
+    updated = await db.registrations.find_one({"reg_id": reg_id}, {"_id": 0})
+    return {"status": "success", "registration": updated}
+
+# Password reset - request OTP
+@api_router.post("/auth/password-reset/request")
+async def request_password_reset(req: PasswordResetRequest):
+    user = await db.users.find_one({"id_number": req.id_number}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    email = user.get('email')
+    if not email:
+        raise HTTPException(status_code=400, detail="No email on account. Contact admin.")
+    
+    otp = str(random.randint(100000, 999999))
+    otp_storage[f"reset_{req.id_number}"] = {
+        "otp": otp,
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=10)
+    }
+    
+    email_sent = await send_otp_email(email, otp)
+    masked_email = email[:3] + "***" + email[email.index('@'):]
+    
+    if email_sent:
+        return {"status": "success", "message": f"OTP sent to {masked_email}"}
+    else:
+        logger.info(f"Password reset OTP for {req.id_number}: {otp}")
+        return {"status": "success", "message": f"OTP sent to {masked_email}", "dev_otp": otp}
+
+# Password reset - verify OTP and set new password
+@api_router.post("/auth/password-reset/verify")
+async def verify_password_reset(req: PasswordResetVerify):
+    stored = otp_storage.get(f"reset_{req.id_number}")
+    if not stored:
+        raise HTTPException(status_code=400, detail="OTP not found. Please request a new one.")
+    if stored['expires_at'] < datetime.now(timezone.utc):
+        del otp_storage[f"reset_{req.id_number}"]
+        raise HTTPException(status_code=400, detail="OTP expired")
+    if stored['otp'] != req.otp:
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+    
+    password_hash = bcrypt.hashpw(req.new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    await db.users.update_one({"id_number": req.id_number}, {"$set": {"password_hash": password_hash}})
+    
+    del otp_storage[f"reset_{req.id_number}"]
+    return {"status": "success", "message": "Password reset successfully"}
+
+# Post delete (owner or mod/admin)
+@api_router.delete("/posts/{post_id}")
+async def delete_post(post_id: str, user: User = Depends(get_current_user)):
+    post = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    if post['user_id'] != user.user_id and not user.is_admin and not user.is_moderator:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this post")
+    
+    await db.posts.delete_one({"post_id": post_id})
+    
+    # Log if staff deletion
+    if post['user_id'] != user.user_id:
+        await log_action(user.user_id, user.display_name, "delete_post", f"Deleted post #{post.get('serial_number', 'N/A')}", post['user_id'], None)
+    
+    return {"status": "success"}
+
+# Admin edit user info
+@api_router.put("/admin/users/{user_id}/edit")
+async def admin_edit_user(user_id: str, edit: AdminEditUser, admin: User = Depends(verify_admin)):
+    target = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    update_data = {}
+    if edit.display_name is not None: update_data['display_name'] = edit.display_name
+    if edit.full_name is not None: update_data['full_name'] = edit.full_name
+    if edit.email is not None: update_data['email'] = edit.email
+    if edit.current_class is not None: update_data['current_class'] = edit.current_class
+    if edit.section is not None: update_data['section'] = edit.section
+    if edit.bio is not None: update_data['bio'] = edit.bio
+    if edit.badges is not None: update_data['badges'] = edit.badges
+    
+    if update_data:
+        await db.users.update_one({"user_id": user_id}, {"$set": update_data})
+        await log_action(admin.user_id, admin.display_name, "edit_user", f"Edited user {target.get('display_name')} ({target.get('id_number')}): {list(update_data.keys())}", user_id, target.get('display_name'))
+    
+    updated = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    return updated
+
+# Report chat message
+@api_router.post("/chat/report")
+async def report_chat_message(report: ChatMessageReport, user: User = Depends(get_current_user)):
+    last_report = await db.reports.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_report.get('serial_number', 0) + 1) if last_report else 1
+    
+    report_doc = {
+        "report_id": str(uuid.uuid4()),
+        "serial_number": next_serial,
+        "type": "chat_message",
+        "message_id": report.message_id,
+        "chat_room": report.chat_room,
+        "reporter_id": user.user_id,
+        "reason": report.reason,
+        "category": report.category,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.reports.insert_one(report_doc)
+    return {"status": "success", "serial_number": next_serial}
+
+# Search action logs by serial number
+@api_router.get("/admin/logs/search/{serial_number}")
+async def search_action_log(serial_number: int, user: User = Depends(get_current_user)):
+    if not user.is_admin and not user.is_moderator:
+        raise HTTPException(status_code=403, detail="Staff access required")
+    log = await db.action_logs.find_one({"serial_number": serial_number}, {"_id": 0})
+    if not log:
+        raise HTTPException(status_code=404, detail="Action log not found")
+    return log
+
+# Chat room access check based on section (B=boys, G=girls)
+@api_router.get("/chat/rooms")
+async def get_available_rooms(user: User = Depends(get_current_user)):
+    section = user.section.upper() if user.section else ""
+    is_boy = section.startswith('B')
+    is_girl = section.startswith('G')
+    
+    rooms = [{"id": "general", "name": "General", "color": "#3b82f6"}]
+    
+    if is_boy:
+        rooms.append({"id": "boys_only", "name": "Boys Only", "color": "#ef4444"})
+    if is_girl:
+        rooms.append({"id": "girls_only", "name": "Girls Only", "color": "#ec4899"})
+    
+    if not user.is_ex_student:
+        rooms.append({"id": f"class_{user.current_class}", "name": f"Class {user.current_class}", "color": "#8b5cf6"})
+        rooms.append({"id": f"section_{user.current_class}_{user.section}", "name": f"Class {user.current_class} {user.section}", "color": "#f59e0b"})
+    
+    if user.is_ex_student:
+        rooms.append({"id": "ex_students", "name": "EX Students", "color": "#a855f7"})
+    
+    return rooms
+
+# Spam detection - rate limiting per user
+spam_tracker = {}
+SPAM_WINDOW = 10  # seconds
+SPAM_MAX_MESSAGES = 5
+
+def check_spam(user_id: str) -> bool:
+    now = datetime.now(timezone.utc).timestamp()
+    if user_id not in spam_tracker:
+        spam_tracker[user_id] = []
+    
+    # Clean old entries
+    spam_tracker[user_id] = [t for t in spam_tracker[user_id] if now - t < SPAM_WINDOW]
+    
+    if len(spam_tracker[user_id]) >= SPAM_MAX_MESSAGES:
+        return True  # is spam
+    
+    spam_tracker[user_id].append(now)
+    return False
 
 # Include router
 app.include_router(api_router)
