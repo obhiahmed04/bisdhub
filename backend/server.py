@@ -232,6 +232,7 @@ class ProfileUpdate(BaseModel):
 class PostCreate(BaseModel):
     content: str
     images: List[str] = Field(default_factory=list)
+    voice_url: Optional[str] = None
     visibility: str = "public"  # public, profile_only, official, friends_only
 
 class CommentCreate(BaseModel):
@@ -700,6 +701,9 @@ async def get_my_profile(user: User = Depends(get_current_user)):
 @api_router.put("/users/me")
 async def update_profile(update: ProfileUpdate, user: User = Depends(get_current_user)):
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    # Never allow name changes via self-service
+    update_data.pop('display_name', None)
+    update_data.pop('full_name', None)
     
     if update_data:
         await db.users.update_one(
@@ -1000,6 +1004,7 @@ async def create_post(post_create: PostCreate, user: User = Depends(get_current_
     
     doc = post.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
+    doc['voice_url'] = post_create.voice_url
     await db.posts.insert_one(doc)
     
     return post

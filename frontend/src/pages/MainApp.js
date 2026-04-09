@@ -11,7 +11,7 @@ import {
   SignOut, Heart, ChatCircle, PaperPlaneRight, Flag, ShieldCheck, Crown,
   Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus, Copy,
   UsersThree, ArrowBendUpLeft, Smiley, WarningCircle, Trash,
-  Phone, VideoCamera
+  Phone, VideoCamera, Image
 } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
@@ -235,15 +235,32 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   };
 
   const sendDMMessage = async () => {
-    if (!newDMMessage.trim() || !activeDM) return;
+    if ((!newDMMessage.trim() && dmAttachImages.length === 0) || !activeDM) return;
     try {
-      await api.post(`/dm/${activeDM}/send`, { content: newDMMessage });
+      await api.post(`/dm/${activeDM}/send`, { content: newDMMessage || '📎', images: dmAttachImages });
       setNewDMMessage('');
+      setDmAttachImages([]);
       loadDMMessages();
       loadDMConversations();
     } catch (error) {
       toast.error('Failed to send message');
     }
+  };
+
+  const [dmAttachImages, setDmAttachImages] = useState([]);
+  const dmFileRef = useRef(null);
+
+  const handleDMImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const backendUrl = process.env.REACT_APP_BACKEND_URL;
+      setDmAttachImages(prev => [...prev, `${backendUrl}${res.data.url}`]);
+    } catch (err) { toast.error('Upload failed'); }
+    e.target.value = '';
   };
 
   const startDMWithUser = (targetUser) => {
@@ -533,6 +550,13 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                       </div>
                       
                       <p className="text-sm mb-3 break-words whitespace-pre-wrap">{post.content}</p>
+                      
+                      {/* Voice Note */}
+                      {post.voice_url && (
+                        <div className="mb-3 bg-[#F5F5F5] border-2 border-[#111111] rounded-xl px-3 py-2">
+                          <VoicePlayer src={`${API_BASE}${post.voice_url}`} />
+                        </div>
+                      )}
                       
                       {/* Post Images */}
                       {post.images?.length > 0 && (
@@ -876,6 +900,13 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                               : 'bg-[#F5F5F5] rounded-2xl rounded-bl-sm px-3 py-2'
                           }`}>
                             <p className="text-sm">{msg.content}</p>
+                            {msg.images?.length > 0 && (
+                              <div className="mt-1.5">
+                                {msg.images.map((img, i) => (
+                                  <img key={i} src={img} alt="" className="rounded-lg max-h-32 object-cover mt-1 border border-white/20" />
+                                ))}
+                              </div>
+                            )}
                             {msg.voice_url && <VoicePlayer src={`${API_BASE}${msg.voice_url}`} />}
                             <p className={`text-[10px] mt-0.5 ${msg.sender_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.sender_id !== user.user_id ? 'var(--text-3)' : undefined }}>
                               {formatChatTime(msg.created_at)}
@@ -887,8 +918,25 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                     </div>
                   </ScrollArea>
 
+                  {/* DM Image Previews */}
+                  {dmAttachImages.length > 0 && (
+                    <div className="flex gap-2 mb-2">
+                      {dmAttachImages.map((img, i) => (
+                        <div key={i} className="relative">
+                          <img src={img} alt="" className="w-12 h-12 object-cover rounded-lg border-2 border-[#111111]" />
+                          <button onClick={() => setDmAttachImages(prev => prev.filter((_, j) => j !== i))}
+                            className="absolute -top-1 -right-1 bg-[#FF6B6B] text-white rounded-full w-4 h-4 flex items-center justify-center text-[8px] border border-[#111111]">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <VoiceRecorder onSend={sendVoiceDM} compact />
+                    <button onClick={() => dmFileRef.current?.click()} data-testid="dm-attach-image"
+                      className="p-2 rounded-lg border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]">
+                      <Image size={14} weight="bold" />
+                    </button>
+                    <input ref={dmFileRef} type="file" accept="image/*,video/mp4" className="hidden" onChange={handleDMImageUpload} />
                     <Input data-testid="dm-message-input"
                       value={newDMMessage}
                       onChange={(e) => setNewDMMessage(e.target.value)}
