@@ -235,12 +235,22 @@ const ManagementPanel = ({ user, onLogout }) => {
 
               <ScrollArea className="h-[500px] md:h-[600px]">
                 <div className="space-y-4">
-                  {actionLogs.map((log) => (
+                  {actionLogs.map((log, index) => (
                     <div key={log.log_id} className="border-2 border-[#111111] rounded-xl p-4 bg-white">
                       <div className="flex flex-col md:flex-row md:items-center justify-between mb-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white mb-2 md:mb-0">
-                          {log.action_type}
-                        </span>
+                        <div className="flex items-center gap-2 mb-2 md:mb-0">
+                          <span className="text-[10px] font-bold text-[#4B4B4B]">#{log.serial_number || (actionLogs.length - index)}</span>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] ${
+                            log.action_type === 'approve' ? 'bg-[#A7F3D0] text-[#111111]' :
+                            log.action_type === 'reject' ? 'bg-[#FF6B6B] text-white' :
+                            log.action_type === 'assign_role' ? 'bg-[#2563EB] text-white' :
+                            log.action_type === 'ban' ? 'bg-[#111111] text-white' :
+                            log.action_type === 'mute' ? 'bg-[#FFF4E5] text-[#111111]' :
+                            'bg-[#FF6B6B] text-white'
+                          }`}>
+                            {log.action_type}
+                          </span>
+                        </div>
                         <span className="text-xs text-[#4B4B4B]">
                           {new Date(log.created_at).toLocaleString()}
                         </span>

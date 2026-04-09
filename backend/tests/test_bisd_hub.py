@@ -479,5 +479,89 @@ class TestFollowSystem:
         print(f"✓ Following: {len(data)}")
 
 
+class TestRepostAndShare:
+    """Test repost and share functionality"""
+    
+    @pytest.fixture
+    def admin_token(self):
+        response = requests.post(f"{BASE_URL}/api/auth/login", json=ADMIN_CREDS)
+        return response.json()["token"]
+    
+    def test_repost_post(self, admin_token):
+        """Test reposting a post"""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        # First create a post to repost
+        post_data = {"content": f"Original post for repost test {time.time()}", "visibility": "public", "images": []}
+        create_resp = requests.post(f"{BASE_URL}/api/posts", headers=headers, json=post_data)
+        assert create_resp.status_code == 200
+        post_id = create_resp.json()["post_id"]
+        
+        # Repost it
+        repost_resp = requests.post(f"{BASE_URL}/api/posts/{post_id}/repost", headers=headers)
+        assert repost_resp.status_code == 200
+        data = repost_resp.json()
+        assert data["status"] == "success"
+        assert "post_id" in data
+        print(f"✓ Repost created - new post_id: {data['post_id']}")
+
+
+class TestFileUpload:
+    """Test file upload functionality"""
+    
+    @pytest.fixture
+    def admin_token(self):
+        response = requests.post(f"{BASE_URL}/api/auth/login", json=ADMIN_CREDS)
+        return response.json()["token"]
+    
+    def test_upload_image(self, admin_token):
+        """Test uploading an image file"""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        # Create a simple test image (1x1 pixel PNG)
+        import base64
+        # Minimal valid PNG (1x1 transparent pixel)
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        files = {"file": ("test.png", png_data, "image/png")}
+        response = requests.post(f"{BASE_URL}/api/upload", headers=headers, files=files)
+        assert response.status_code == 200
+        data = response.json()
+        assert "url" in data
+        assert data["url"].startswith("/api/uploads/")
+        print(f"✓ Image uploaded - URL: {data['url']}")
+        
+        # Verify the uploaded file is accessible
+        file_url = f"{BASE_URL}{data['url']}"
+        get_resp = requests.get(file_url)
+        assert get_resp.status_code == 200
+        print(f"✓ Uploaded file is accessible")
+    
+    def test_upload_invalid_type(self, admin_token):
+        """Test uploading an invalid file type"""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        files = {"file": ("test.txt", b"Hello World", "text/plain")}
+        response = requests.post(f"{BASE_URL}/api/upload", headers=headers, files=files)
+        assert response.status_code == 400
+        print(f"✓ Invalid file type rejected correctly")
+
+
+class TestAdminRegistrationApproval:
+    """Test admin registration approval/rejection endpoints"""
+    
+    @pytest.fixture
+    def admin_token(self):
+        response = requests.post(f"{BASE_URL}/api/auth/login", json=ADMIN_CREDS)
+        return response.json()["token"]
+    
+    def test_get_pending_registrations(self, admin_token):
+        """Test getting pending registrations"""
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        response = requests.get(f"{BASE_URL}/api/admin/registrations/pending", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        print(f"✓ Pending registrations: {len(data)}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

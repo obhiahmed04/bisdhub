@@ -313,12 +313,21 @@ const ModerationPanel = ({ user, onLogout }) => {
               <h3 className="text-lg font-black mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Recent Moderation Actions</h3>
               <ScrollArea className="h-[500px] md:h-[600px]">
                 <div className="space-y-4">
-                  {actionLogs.filter(log => ['ban', 'unban', 'mute', 'unmute', 'delete_post'].includes(log.action_type)).map((log) => (
+                  {actionLogs.filter(log => ['ban', 'unban', 'mute', 'unmute', 'delete_post'].includes(log.action_type)).map((log, index) => (
                     <div key={log.log_id} className="border-2 border-[#111111] rounded-xl p-4 bg-white">
                       <div className="flex flex-col md:flex-row md:items-center justify-between mb-2">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] bg-[#FF6B6B] text-white mb-2 md:mb-0 w-fit">
-                          {log.action_type.toUpperCase()}
-                        </span>
+                        <div className="flex items-center gap-2 mb-2 md:mb-0">
+                          <span className="text-[10px] font-bold text-[#4B4B4B]">#{log.serial_number || index + 1}</span>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border-2 border-[#111111] w-fit ${
+                            log.action_type === 'ban' ? 'bg-[#111111] text-white' :
+                            log.action_type === 'unban' ? 'bg-[#A7F3D0] text-[#111111]' :
+                            log.action_type === 'mute' ? 'bg-[#FFF4E5] text-[#111111]' :
+                            log.action_type === 'delete_post' ? 'bg-[#FF6B6B] text-white' :
+                            'bg-[#FF6B6B] text-white'
+                          }`}>
+                            {log.action_type.toUpperCase()}
+                          </span>
+                        </div>
                         <span className="text-xs text-[#4B4B4B]">
                           {new Date(log.created_at).toLocaleString()}
                         </span>

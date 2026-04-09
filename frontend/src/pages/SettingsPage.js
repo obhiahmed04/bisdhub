@@ -225,6 +225,18 @@ const SettingsPage = ({ user, onLogout, updateUser }) => {
           </div>
         </div>
 
+        {/* Help & Support */}
+        <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4 mb-4">
+          <h2 className="font-black text-sm mb-3 flex items-center gap-2">
+            Help & Support
+          </h2>
+          <p className="text-xs text-[#4B4B4B] mb-3">Need help? Contact an admin through the help chat system.</p>
+          <Button onClick={() => window.open('/pending-registration', '_blank')} data-testid="settings-help-button"
+            className="bg-[#2563EB] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm">
+            Open Help Chat
+          </Button>
+        </div>
+
         {/* Logout */}
         <Button onClick={onLogout} data-testid="settings-logout-button"
           className="w-full bg-[#FF6B6B] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold py-3 rounded-xl text-sm mb-8">

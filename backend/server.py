@@ -173,10 +173,13 @@ class Post(BaseModel):
     user_id: str
     content: str
     images: List[str] = Field(default_factory=list)
-    visibility: str = "public"  # public, profile_only, official
+    visibility: str = "public"  # public, profile_only, official, friends_only
     likes: List[str] = Field(default_factory=list)
     comments: List[Dict[str, Any]] = Field(default_factory=list)
     is_official: bool = False
+    repost_of: Optional[str] = None  # post_id of original post
+    repost_user_id: Optional[str] = None  # original poster
+    share_count: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ChatMessage(BaseModel):
@@ -363,6 +366,47 @@ async def send_otp_email(email: str, otp: str):
         logger.error(f"Failed to send email: {str(e)}")
         return None
 
+async def send_status_email(email: str, name: str, status: str, reason: str = None):
+    if status == "approved":
+        subject = "BISD HUB - Registration Approved!"
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: auto;">
+            <h2 style="color: #2563EB;">BISD HUB</h2>
+            <h3 style="color: #16a34a;">Registration Approved</h3>
+            <p>Hi {name},</p>
+            <p>Your registration has been <strong>approved</strong>. You can now login to BISD HUB with your ID number and the temporary password set by the admin.</p>
+            <p>Please change your password after first login.</p>
+            <p style="color: #4B4B4B; font-size: 12px;">— BISD HUB Team</p>
+        </div>
+        """
+    else:
+        subject = "BISD HUB - Registration Status Update"
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 500px; margin: auto;">
+            <h2 style="color: #2563EB;">BISD HUB</h2>
+            <h3 style="color: #ef4444;">Registration Not Approved</h3>
+            <p>Hi {name},</p>
+            <p>Unfortunately, your registration was not approved.</p>
+            {f'<p><strong>Reason:</strong> {reason}</p>' if reason else ''}
+            <p>You can contact an admin via the help chat on the registration status page.</p>
+            <p style="color: #4B4B4B; font-size: 12px;">— BISD HUB Team</p>
+        </div>
+        """
+    
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [email],
+        "subject": subject,
+        "html": html_content
+    }
+    
+    try:
+        email_response = await asyncio.to_thread(resend.Emails.send, params)
+        return email_response
+    except Exception as e:
+        logger.error(f"Failed to send status email: {str(e)}")
+        return None
+
 # ============= ROUTES =============
 
 @api_router.get("/")
@@ -498,6 +542,12 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
             registration['full_name']
         )
         
+        # Send approval email notification
+        try:
+            await send_status_email(registration['email'], registration['full_name'], "approved")
+        except Exception as e:
+            logger.error(f"Failed to send approval email: {e}")
+        
         return {"status": "success", "message": "User approved and account created"}
     
     elif action.action == "reject":
@@ -515,6 +565,12 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
             None,
             registration['full_name']
         )
+        
+        # Send rejection email notification
+        try:
+            await send_status_email(registration['email'], registration['full_name'], "rejected", action.rejection_reason)
+        except Exception as e:
+            logger.error(f"Failed to send rejection email: {e}")
         
         return {"status": "success", "message": "Registration rejected"}
     
@@ -1011,6 +1067,42 @@ async def get_post_likes(post_id: str, user: User = Depends(get_current_user)):
             like_users.append(like_user)
     
     return like_users
+
+# Repost endpoint
+@api_router.post("/posts/{post_id}/repost")
+async def repost(post_id: str, user: User = Depends(get_current_user)):
+    original = await db.posts.find_one({"post_id": post_id}, {"_id": 0})
+    if not original:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # Get next serial number
+    last_post = await db.posts.find_one({}, {"serial_number": 1, "_id": 0}, sort=[("serial_number", -1)])
+    next_serial = (last_post.get('serial_number', 0) if last_post else 0) + 1
+    
+    repost_data = Post(
+        user_id=user.user_id,
+        content=original['content'],
+        images=original.get('images', []),
+        visibility="public",
+        repost_of=post_id,
+        repost_user_id=original['user_id'],
+        serial_number=next_serial
+    )
+    doc = repost_data.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    await db.posts.insert_one(doc)
+    
+    # Increment share count on original
+    await db.posts.update_one({"post_id": post_id}, {"$inc": {"share_count": 1}})
+    
+    # Notify original poster
+    if original['user_id'] != user.user_id:
+        await send_notification(
+            original['user_id'], "repost", user.user_id,
+            f"{user.display_name} reposted your post", post_id
+        )
+    
+    return {"status": "success", "post_id": repost_data.post_id}
 
 @api_router.get("/posts/search")
 async def search_posts(query: str = Query(..., min_length=1), user: User = Depends(get_current_user)):

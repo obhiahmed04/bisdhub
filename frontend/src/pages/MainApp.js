@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { 
   House, ChatCircleDots, PaperPlaneTilt, User, MagnifyingGlass, 
   SignOut, Heart, ChatCircle, PaperPlaneRight, Flag, ShieldCheck, Crown,
-  Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus
+  Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus, Copy
 } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
@@ -39,6 +39,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   const [wsReady, setWsReady] = useState(false);
   const [expandedComments, setExpandedComments] = useState({});
   const navigate = useNavigate();
+  const location = useLocation();
   const chatEndRef = useRef(null);
   const wsRef = useRef(null);
   const searchTimeoutRef = useRef(null);
@@ -49,6 +50,16 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     const cleanup = connectWebSocket();
     return cleanup;
   }, []);
+
+  // Handle incoming DM navigation from profile page
+  useEffect(() => {
+    if (location.state?.startDM) {
+      setActiveTab('dm');
+      setActiveDM(location.state.startDM.user_id);
+      setActiveDMUser(location.state.startDM);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   useEffect(() => { loadFeed(); }, [feedType]);
 
@@ -211,6 +222,25 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     setActiveTab('dm');
     setActiveDM(targetUser.user_id);
     setActiveDMUser(targetUser);
+  };
+
+  const repostPost = async (postId) => {
+    try {
+      await api.post(`/posts/${postId}/repost`);
+      toast.success('Post reposted!');
+      loadFeed();
+    } catch (error) {
+      toast.error('Failed to repost');
+    }
+  };
+
+  const sharePost = (postId) => {
+    const url = `${window.location.origin}/post/${postId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success('Post link copied to clipboard!');
+    }).catch(() => {
+      toast.info('Share link: ' + url);
+    });
   };
 
   const getChatRooms = () => {
@@ -425,6 +455,16 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           <ChatCircle size={18} weight="bold" />
                           {post.comments?.length || 0}
                         </button>
+                        <button onClick={() => repostPost(post.post_id)}
+                          className="flex items-center gap-1.5 text-[#4B4B4B] hover:text-[#16a34a] font-medium" data-testid={`repost-${post.post_id}`}>
+                          <ArrowsClockwise size={18} weight="bold" />
+                          {post.share_count || 0}
+                        </button>
+                        <button onClick={() => sharePost(post.post_id)}
+                          className="flex items-center gap-1.5 text-[#4B4B4B] hover:text-[#2563EB] font-medium" data-testid={`share-${post.post_id}`}>
+                          <Copy size={18} weight="bold" />
+                          <span className="hidden sm:inline">Share</span>
+                        </button>
                         {post.user_id !== user.user_id && (
                           <button onClick={() => startDMWithUser(post.user)}
                             className="flex items-center gap-1.5 text-[#4B4B4B] hover:text-[#2563EB] font-medium">
@@ -436,6 +476,13 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           <ReportDialog postId={post.post_id} onReported={loadFeed} />
                         )}
                       </div>
+                      
+                      {/* Repost indicator */}
+                      {post.repost_of && (
+                        <p className="text-[10px] text-[#4B4B4B] mt-1 flex items-center gap-1">
+                          <ArrowsClockwise size={10} weight="bold" /> Reposted
+                        </p>
+                      )}
                       
                       {expandedComments[post.post_id] && (
                         <CommentSection post={post} user={user} />

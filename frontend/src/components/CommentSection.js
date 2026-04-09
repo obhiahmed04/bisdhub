@@ -19,10 +19,10 @@ const CommentSection = ({ post, user }) => {
     if (!newComment.trim()) return;
     setLoading(true);
     try {
-      const response = await api.post(`/posts/${post.post_id}/comments`, {
+      const response = await api.post(`/posts/${post.post_id}/comment`, {
         content: newComment
       });
-      setComments(prev => [...prev, response.data]);
+      setComments(prev => [...prev, response.data.comment]);
       setNewComment('');
     } catch (error) {
       toast.error('Failed to add comment');
