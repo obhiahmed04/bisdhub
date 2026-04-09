@@ -9,7 +9,8 @@ import { toast } from 'sonner';
 import { 
   House, ChatCircleDots, PaperPlaneTilt, User, MagnifyingGlass, 
   SignOut, Heart, ChatCircle, PaperPlaneRight, Flag, ShieldCheck, Crown,
-  Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus, Copy
+  Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus, Copy,
+  UsersThree, ArrowBendUpLeft, Smiley, WarningCircle, Trash
 } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
@@ -39,6 +40,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   const [wsReady, setWsReady] = useState(false);
   const [expandedComments, setExpandedComments] = useState({});
   const [chatRooms, setChatRooms] = useState([]);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
   const chatEndRef = useRef(null);
@@ -117,6 +120,9 @@ const MainApp = ({ user, onLogout, updateUser }) => {
         });
         loadDMConversations();
       }
+      if (data.type === 'reaction_update') {
+        setChatMessages(prev => prev.map(m => m.message_id === data.message_id ? { ...m, reactions: data.reactions } : m));
+      }
     };
 
     socket.onerror = () => setWsReady(false);
@@ -183,12 +189,17 @@ const MainApp = ({ user, onLogout, updateUser }) => {
       if (!wsReady) toast.error('Chat connection not ready');
       return;
     }
-    wsRef.current.send(JSON.stringify({
+    const payload = {
       type: 'chat_message',
       chat_room: activeChatRoom,
       content: newChatMessage
-    }));
+    };
+    if (replyingTo) {
+      payload.reply_to = replyingTo.message_id;
+    }
+    wsRef.current.send(JSON.stringify(payload));
     setNewChatMessage('');
+    setReplyingTo(null);
   };
 
   const loadDMConversations = async () => {
@@ -273,6 +284,23 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     });
   };
 
+  const sendReaction = (messageId, emoji) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: 'reaction', message_id: messageId, emoji }));
+    setShowEmojiPicker(null);
+  };
+
+  const reportChatMessage = async (messageId) => {
+    const reason = window.prompt('Why are you reporting this message?');
+    if (!reason) return;
+    try {
+      await api.post('/chat/report', { message_id: messageId, chat_room: activeChatRoom, reason, category: 'other' });
+      toast.success('Message reported');
+    } catch (e) { toast.error('Failed to report'); }
+  };
+
+  const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
   const formatTime = (dateStr) => {
     if (!dateStr) return '';
     const d = new Date(dateStr);
@@ -294,7 +322,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
       {/* Left Sidebar */}
       <div className="hidden md:flex md:w-60 bg-white border-r-2 border-[#111111] p-4 flex-col">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-black" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="app-logo">BISD HUB</h1>
+          <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-10 object-contain" data-testid="app-logo" />
           <div className="flex gap-1">
             <button onClick={toggleDarkMode} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" data-testid="dark-mode-toggle">
               {darkMode ? <Sun size={18} weight="bold" /> : <Moon size={18} weight="bold" />}
@@ -321,6 +349,14 @@ const MainApp = ({ user, onLogout, updateUser }) => {
               {item.label}
             </button>
           ))}
+
+          <button
+            data-testid="nav-friends"
+            onClick={() => navigate('/friends')}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold border-2 border-[#111111] bg-white text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] text-sm"
+          >
+            <UsersThree size={18} weight="bold" /> Friends
+          </button>
 
           <button
             data-testid="nav-profile"
@@ -378,6 +414,9 @@ const MainApp = ({ user, onLogout, updateUser }) => {
             <item.icon size={24} weight={activeTab === item.id ? 'fill' : 'bold'} />
           </button>
         ))}
+        <button onClick={() => navigate('/friends')} className="p-2 text-[#4B4B4B]">
+          <UsersThree size={24} weight="bold" />
+        </button>
         <button onClick={() => navigate(`/profile/${user.id_number}`)} className="p-2 text-[#4B4B4B]">
           <User size={24} weight="bold" />
         </button>
@@ -388,7 +427,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
 
       {/* Mobile Header */}
       <div className="md:hidden bg-white border-b-2 border-[#111111] p-3 flex items-center justify-between">
-        <h1 className="text-lg font-black" style={{ fontFamily: 'Outfit, sans-serif' }}>BISD HUB</h1>
+        <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-8 object-contain" />
         <div className="flex gap-2 items-center">
           <button onClick={toggleDarkMode} className="p-1.5" data-testid="mobile-dark-toggle">
             {darkMode ? <Sun size={18} weight="bold" /> : <Moon size={18} weight="bold" />}
@@ -587,7 +626,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
               <div className="space-y-1.5">
                 {chatRooms.map((room) => (
                   <button key={room.id} data-testid={`chat-room-${room.id}`}
-                    onClick={() => setActiveChatRoom(room.id)}
+                    onClick={() => { setActiveChatRoom(room.id); setReplyingTo(null); }}
                     className="w-full text-left px-3 py-2 rounded-lg font-bold text-xs transition-all"
                     style={{
                       backgroundColor: activeChatRoom === room.id ? room.color : 'var(--bg-surface)',
@@ -611,19 +650,65 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                 <ScrollArea className="flex-1 mb-3">
                   <div className="space-y-3">
                     {chatMessages.map((msg) => (
-                      <div key={msg.message_id} className={`flex ${msg.user_id === user.user_id ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[75%] ${
+                      <div key={msg.message_id} data-testid={`chat-msg-${msg.message_id}`} className={`flex ${msg.user_id === user.user_id ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] group relative ${
                           msg.user_id === user.user_id
                             ? 'bg-[#2563EB] text-white rounded-2xl rounded-br-sm px-3 py-2'
                             : 'bg-[#F5F5F5] rounded-2xl rounded-bl-sm px-3 py-2'
                         }`}>
+                          {/* Reply preview */}
+                          {msg.reply_data && (
+                            <div className={`text-[10px] mb-1 px-2 py-1 rounded-lg ${msg.user_id === user.user_id ? 'bg-blue-700/40' : 'bg-gray-200'}`}>
+                              <span className="font-bold">{msg.reply_data.user?.display_name}:</span> {msg.reply_data.content?.slice(0, 50)}{msg.reply_data.content?.length > 50 ? '...' : ''}
+                            </div>
+                          )}
                           {msg.user_id !== user.user_id && (
                             <p className="text-[10px] font-bold opacity-70 mb-0.5">{msg.user?.display_name}</p>
                           )}
                           <p className="text-sm">{msg.content}</p>
                           <p className={`text-[10px] mt-0.5 ${msg.user_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.user_id !== user.user_id ? 'var(--text-3)' : undefined }}>
+                            {msg.serial_number && <span className="mr-1">#{msg.serial_number}</span>}
                             {formatChatTime(msg.created_at)}
                           </p>
+
+                          {/* Reactions display */}
+                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(msg.reactions).map(([emoji, users]) => (
+                                <button key={emoji} onClick={() => sendReaction(msg.message_id, emoji)}
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-full border ${users.includes(user.user_id) ? 'border-blue-400 bg-blue-50' : 'border-gray-300 bg-white'}`}>
+                                  {emoji} {users.length}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Hover actions */}
+                          <div className="hidden group-hover:flex absolute -top-3 right-0 gap-0.5 bg-white border border-gray-200 rounded-lg shadow-md p-0.5">
+                            <button onClick={() => setReplyingTo(msg)} data-testid={`reply-msg-${msg.message_id}`}
+                              className="p-1 hover:bg-gray-100 rounded" title="Reply">
+                              <ArrowBendUpLeft size={12} weight="bold" className="text-gray-600" />
+                            </button>
+                            <button onClick={() => setShowEmojiPicker(showEmojiPicker === msg.message_id ? null : msg.message_id)}
+                              className="p-1 hover:bg-gray-100 rounded" title="React">
+                              <Smiley size={12} weight="bold" className="text-gray-600" />
+                            </button>
+                            {msg.user_id !== user.user_id && (
+                              <button onClick={() => reportChatMessage(msg.message_id)} data-testid={`report-msg-${msg.message_id}`}
+                                className="p-1 hover:bg-red-50 rounded" title="Report">
+                                <WarningCircle size={12} weight="bold" className="text-red-400" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Emoji picker */}
+                          {showEmojiPicker === msg.message_id && (
+                            <div className="absolute -top-10 right-0 bg-white border border-gray-200 rounded-lg shadow-lg p-1 flex gap-0.5 z-10">
+                              {QUICK_EMOJIS.map(e => (
+                                <button key={e} onClick={() => sendReaction(msg.message_id, e)} className="p-1 hover:bg-gray-100 rounded text-base">{e}</button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -631,12 +716,23 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                   </div>
                 </ScrollArea>
 
+                {/* Reply bar */}
+                {replyingTo && (
+                  <div className="flex items-center gap-2 px-3 py-2 mb-2 rounded-lg text-xs" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+                    <ArrowBendUpLeft size={12} weight="bold" style={{ color: 'var(--blue)' }} />
+                    <span className="flex-1 truncate" style={{ color: 'var(--text-2)' }}>
+                      Replying to <span className="font-bold">{replyingTo.user?.display_name}</span>: {replyingTo.content?.slice(0, 40)}
+                    </span>
+                    <button onClick={() => setReplyingTo(null)} className="font-bold" style={{ color: 'var(--text-3)' }}>✕</button>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Input data-testid="chat-message-input"
                     value={newChatMessage}
                     onChange={(e) => setNewChatMessage(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
-                    placeholder="Type a message..."
+                    placeholder={replyingTo ? 'Type your reply...' : 'Type a message...'}
                     className="border-2 border-[#111111] rounded-xl px-3 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]" />
                   <Button data-testid="send-chat-message" onClick={sendChatMessage}
                     className="bg-[#2563EB] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 rounded-xl">

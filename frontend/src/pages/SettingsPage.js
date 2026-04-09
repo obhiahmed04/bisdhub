@@ -1,56 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Switch } from '../components/ui/switch';
-import { ScrollArea } from '../components/ui/scroll-area';
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import { toast } from 'sonner';
-import { ArrowLeft, Moon, Sun, Bell, Lock, Eye, UserCircle, Trash } from '@phosphor-icons/react';
+import { ArrowLeft, Moon, Sun, Bell, Lock, Eye, UserCircle } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { useTheme } from '../App';
 
 const SettingsPage = ({ user, onLogout, updateUser }) => {
   const { darkMode, toggleDarkMode } = useTheme();
   const [profileData, setProfileData] = useState(null);
-  const [friendRequests, setFriendRequests] = useState([]);
-  const [friends, setFriends] = useState([]);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadProfile();
-    loadFriendRequests();
-    loadFriends();
-  }, []);
+  useEffect(() => { loadProfile(); }, []);
 
   const loadProfile = async () => {
     try { const r = await api.get('/users/me'); setProfileData(r.data); } catch (e) {}
-  };
-  const loadFriendRequests = async () => {
-    try { const r = await api.get('/friends/requests'); setFriendRequests(r.data); } catch (e) {}
-  };
-  const loadFriends = async () => {
-    try { const r = await api.get('/friends/list'); setFriends(r.data); } catch (e) {}
-  };
-
-  const acceptFriend = async (userId) => {
-    try { await api.post(`/friends/accept/${userId}`); toast.success('Accepted!'); loadFriendRequests(); loadFriends(); } catch (e) { toast.error('Failed'); }
-  };
-  const rejectFriend = async (userId) => {
-    try { await api.post(`/friends/reject/${userId}`); toast.info('Declined'); loadFriendRequests(); } catch (e) { toast.error('Failed'); }
-  };
-  const removeFriend = async (userId) => {
-    try { await api.delete(`/friends/${userId}`); toast.info('Removed'); loadFriends(); } catch (e) { toast.error('Failed'); }
   };
 
   const updateSetting = async (field, value) => {
     try {
       await api.put('/users/me', { [field]: value });
       setProfileData(prev => ({ ...prev, [field]: value }));
-      if (updateUser) {
-        const updated = { ...user, [field]: value };
-        updateUser(updated);
-      }
+      if (updateUser) updateUser({ ...user, [field]: value });
       toast.success('Updated');
     } catch (e) { toast.error('Failed'); }
   };
@@ -112,54 +84,11 @@ const SettingsPage = ({ user, onLogout, updateUser }) => {
           </Section>
         )}
 
-        {/* Friends Management */}
-        <Section title={`FRIEND REQUESTS (${friendRequests.length})`} icon={<UserCircle size={14} weight="bold" />}>
-          {friendRequests.length === 0 ? (
-            <p className="text-xs py-2" style={{ color: 'var(--text-3)' }}>No pending requests</p>
-          ) : (
-            <div className="space-y-2">
-              {friendRequests.map((req) => (
-                <div key={req.user_id} className="flex items-center gap-3 p-2 rounded-lg" style={{ border: '1px solid var(--border)' }}>
-                  <Avatar className="w-8 h-8 cursor-pointer" style={{ border: '1px solid var(--border)' }}
-                    onClick={() => navigate(`/profile/${req.id_number}`)}>
-                    <AvatarImage src={req.profile_picture} /><AvatarFallback className="text-xs">{req.display_name?.[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm truncate" style={{ color: 'var(--text-1)' }}>{req.display_name}</p>
-                    <p className="text-[10px] badge-mono" style={{ color: 'var(--text-3)' }}>@{req.id_number}</p>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <Button onClick={() => acceptFriend(req.user_id)} className="btn text-[10px] px-2.5 py-1" style={{ background: 'var(--green)', color: 'white', borderColor: 'var(--green)' }}>Accept</Button>
-                    <Button onClick={() => rejectFriend(req.user_id)} className="btn text-[10px] px-2.5 py-1" style={{ background: 'var(--red)', color: 'white', borderColor: 'var(--red)' }}>Decline</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Section>
-
-        <Section title={`FRIENDS (${friends.length})`} icon={<UserCircle size={14} weight="bold" />}>
-          {friends.length === 0 ? (
-            <p className="text-xs py-2" style={{ color: 'var(--text-3)' }}>No friends yet. Follow users and send friend requests from their profiles!</p>
-          ) : (
-            <ScrollArea className="max-h-64">
-              <div className="space-y-2">
-                {friends.map((f) => (
-                  <div key={f.user_id} className="flex items-center gap-3 p-2 rounded-lg" style={{ border: '1px solid var(--border)' }}>
-                    <Avatar className="w-8 h-8 cursor-pointer" style={{ border: '1px solid var(--border)' }}
-                      onClick={() => navigate(`/profile/${f.id_number}`)}>
-                      <AvatarImage src={f.profile_picture} /><AvatarFallback className="text-xs">{f.display_name?.[0]}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-sm truncate" style={{ color: 'var(--text-1)' }}>{f.display_name}</p>
-                      <p className="text-[10px] badge-mono" style={{ color: 'var(--text-3)' }}>@{f.id_number}</p>
-                    </div>
-                    <Button onClick={() => removeFriend(f.user_id)} className="btn btn-ghost text-[10px] px-2 py-1 hover:text-red-500">Remove</Button>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          )}
+        {/* Friends shortcut */}
+        <Section title="FRIENDS" icon={<UserCircle size={14} weight="bold" />}>
+          <Button onClick={() => navigate('/friends')} data-testid="go-to-friends-page" className="btn btn-primary w-full py-2.5 text-sm">
+            Manage Friends & Requests
+          </Button>
         </Section>
 
         {/* Account Info */}

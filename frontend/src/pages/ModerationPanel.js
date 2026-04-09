@@ -310,7 +310,20 @@ const ModerationPanel = ({ user, onLogout }) => {
 
           <TabsContent value="logs">
             <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] p-4 md:p-6">
-              <h3 className="text-lg font-black mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Recent Moderation Actions</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <h3 className="text-lg font-black" style={{ fontFamily: 'Outfit, sans-serif' }}>Recent Actions</h3>
+                <div className="relative flex-1 max-w-md">
+                  <Input data-testid="mod-log-search" placeholder="Search logs by serial #, name, action..."
+                    className="border-2 border-[#111111] rounded-xl px-4 py-2 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)]"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.trim()) {
+                        api.get('/management/action-logs', { params: { search: val, limit: 50 } })
+                          .then(r => setActionLogs(r.data)).catch(() => {});
+                      } else { loadActionLogs(); }
+                    }} />
+                </div>
+              </div>
               <ScrollArea className="h-[500px] md:h-[600px]">
                 <div className="space-y-4">
                   {actionLogs.filter(log => ['ban', 'unban', 'mute', 'unmute', 'delete_post'].includes(log.action_type)).map((log, index) => (
