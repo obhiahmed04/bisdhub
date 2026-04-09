@@ -39,7 +39,7 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 
 ### Phase 2 - UI Refactor
 - CreatePostDialog with visibility selector
-- ReportDialog for posts
+- ReportDialog for posts (shows serial # after submit)
 - EditProfileDialog with file uploads
 - CommentSection component
 - Friend request system
@@ -65,34 +65,38 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 - Post timestamps, deletion, serial numbers
 - Spam detection in chat (rate limiting)
 
-### Phase 3.5 - Current Session (April 9, 2026)
-- **Logo Integration**: BISD HUB logo (PNG/SVG) displayed on Login, MainApp sidebar, Mobile header, Admin Panel
-- **Friends Page Separation**: Dedicated `/friends` route with FriendsPage.js (tabs for Friends list & Requests, search, accept/decline/remove)
-- **Settings Cleaned**: Removed inline friends management, added "Manage Friends" shortcut button
-- **Global Chat Enhancements**: Reply to messages (with reply preview), emoji reactions (6 quick emojis), report messages
-- **Admin User Editing**: Edit dialog in Admin Panel for modifying user profiles (name, email, class, section, bio)
-- **Action Logs Tab**: Added to Admin Panel with search bar (filter by serial #, admin name, action type)
-- **Moderation Logs Search**: Added search input to Moderation Panel action logs
-- **Mobile Nav**: Added Friends icon to mobile bottom navigation
+### Phase 3.5 (April 9, 2026)
+- **Logo Integration**: BISD HUB logo on Login (w-44), Sidebar (w-28), Mobile header (w-20), Admin/Mod panels
+- **Friends Page**: Dedicated /friends route with tabs (Friends list, Requests), search, accept/decline/remove
+- **Settings Cleaned**: Friends management removed, added shortcut button to /friends
+- **Global Chat Enhanced**: Reply to messages, emoji reactions (6 quick), report messages
+- **Admin User Editing**: Edit dialog (name, email, class, section, bio) in Admin Panel
+- **Action Logs Tab**: Added to Admin + Moderation panels with search (serial #, name, action type)
+- **Mobile Nav**: Added Friends icon
+
+### Phase 3.6 — Bug Fixes (April 9, 2026)
+- **Logo Sizing Fixed**: Width-based sizing for proper alignment
+- **Serial Numbers Hidden**: Removed from user-facing posts & chat; only shown in report dialogs and staff panels
+- **Notification Bell Fixed**: Prevented overflow, added backdrop for mobile, mark-all-read button
+- **Search Enhanced**: Realtime dropdown results in sidebar + dedicated /search page with tabs (All/Users/Posts)
+- **Report Details Enriched**: Staff panels now show violator name, ID, class/section, post/message content, images
+- **Chat Reports Tab**: New tab in Moderation Panel for chat message reports with full context
+- **Backend**: Added /mod/chat-reports, /mod/chat-reports/{id}/resolve endpoints, enriched /mod/reports with violator data
 
 ## Prioritized Backlog
 
-### P0 (Critical)
-- None remaining
-
 ### P1 (Important)
-- GIF support via Tenor/Giphy integration (posts & chat)
-- Voice recording for posts and chat
+- GIF support via Tenor/Giphy (posts & chat) — requires API key from user
+- Voice recording for posts and chat (MediaRecorder API)
+- Audio/Video calls in DMs — requires WebRTC/Twilio integration
+- DM search bar frontend connection (backend exists)
 - Message Requests folder for DMs from non-friends
-- Video/Voice calls in DMs (requires WebRTC/Twilio)
-- Basic Automoderation enhancements
-- DM search bar connection (backend exists)
 
 ### P2 (Nice to Have)
-- Push notifications (browser) - toggle exists, needs service worker
+- Push notifications service worker
 - Content sharing to external platforms
 - User blocking
 - Advanced search filters
 - Post pinning for profiles
-- Verify Email Notifications (Resend) - logic exists, keep OFF until user says go
-- Backend refactoring (server.py is ~2000 lines, split into modules)
+- Verify Email Notifications (Resend) - keep OFF until user says go
+- Backend refactoring (server.py ~2000 lines → split into modules)
