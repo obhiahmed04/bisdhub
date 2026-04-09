@@ -21,12 +21,12 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 8. Dark mode
 9. File uploads (images/video)
 
-## What's Implemented (as of April 2026)
+## What's Implemented
 
 ### Phase 1 - MVP
 - JWT authentication with login/register
-- Multi-step registration form
-- Pending registration page with status check
+- Multi-step registration form with calendar pickers
+- Pending registration page with status check + 10-min edit window
 - Admin approval/rejection of registrations
 - User profiles with banner, PFP, bio, badges
 - Following/followers system
@@ -43,9 +43,9 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 - EditProfileDialog with file uploads
 - CommentSection component
 - Friend request system
-- Serial numbers for actions
+- Serial numbers for all entities
 
-### Phase 3 - Comprehensive Fixes (Current)
+### Phase 3 - Comprehensive Fixes
 - Fixed Global Chat WebSocket (/api/ws/ prefix)
 - Fixed User model (added friends, friend_requests fields)
 - File upload system (PFP, banner, post images)
@@ -56,14 +56,24 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 - Share/Repost functionality
 - DM initiation from profiles
 - Dark mode (global toggle)
-- Settings page (appearance, privacy, friends, account info)
 - Banned user routing page with help chat
 - Searchbars in all 3 staff panels
 - Improved action logs with serial numbers and color coding
-- Email notification on approval/rejection (Resend - key needed)
-- Privacy toggles (profile, followers, following visibility)
-- Comment endpoint fix
-- Pending registration with status check from login page
+- Email notification on approval/rejection (Resend - toggled OFF until tested)
+- Privacy toggles (profile, followers, following, friends visibility)
+- Password Reset via OTP (Resend)
+- Post timestamps, deletion, serial numbers
+- Spam detection in chat (rate limiting)
+
+### Phase 3.5 - Current Session (April 9, 2026)
+- **Logo Integration**: BISD HUB logo (PNG/SVG) displayed on Login, MainApp sidebar, Mobile header, Admin Panel
+- **Friends Page Separation**: Dedicated `/friends` route with FriendsPage.js (tabs for Friends list & Requests, search, accept/decline/remove)
+- **Settings Cleaned**: Removed inline friends management, added "Manage Friends" shortcut button
+- **Global Chat Enhancements**: Reply to messages (with reply preview), emoji reactions (6 quick emojis), report messages
+- **Admin User Editing**: Edit dialog in Admin Panel for modifying user profiles (name, email, class, section, bio)
+- **Action Logs Tab**: Added to Admin Panel with search bar (filter by serial #, admin name, action type)
+- **Moderation Logs Search**: Added search input to Moderation Panel action logs
+- **Mobile Nav**: Added Friends icon to mobile bottom navigation
 
 ## Prioritized Backlog
 
@@ -71,14 +81,18 @@ Build a social media app named BISD HUB for 5000 users. Registration is strictly
 - None remaining
 
 ### P1 (Important)
-- GIF support via Tenor/Giphy integration
+- GIF support via Tenor/Giphy integration (posts & chat)
+- Voice recording for posts and chat
 - Message Requests folder for DMs from non-friends
-- Video/Voice calls in DMs
-- Resend API key for email notifications to actually work
+- Video/Voice calls in DMs (requires WebRTC/Twilio)
+- Basic Automoderation enhancements
+- DM search bar connection (backend exists)
 
 ### P2 (Nice to Have)
-- Push notifications (browser)
+- Push notifications (browser) - toggle exists, needs service worker
 - Content sharing to external platforms
 - User blocking
 - Advanced search filters
 - Post pinning for profiles
+- Verify Email Notifications (Resend) - logic exists, keep OFF until user says go
+- Backend refactoring (server.py is ~2000 lines, split into modules)
