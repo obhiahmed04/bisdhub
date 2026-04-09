@@ -10,7 +10,8 @@ import {
   House, ChatCircleDots, PaperPlaneTilt, User, MagnifyingGlass, 
   SignOut, Heart, ChatCircle, PaperPlaneRight, Flag, ShieldCheck, Crown,
   Moon, Sun, GearSix, ShareNetwork, ArrowsClockwise, UserPlus, Copy,
-  UsersThree, ArrowBendUpLeft, Smiley, WarningCircle, Trash
+  UsersThree, ArrowBendUpLeft, Smiley, WarningCircle, Trash,
+  Phone, VideoCamera
 } from '@phosphor-icons/react';
 import api from '../utils/api';
 import { API_BASE } from '../utils/api';
@@ -18,6 +19,8 @@ import NotificationBell from '../components/NotificationBell';
 import CreatePostDialog from '../components/CreatePostDialog';
 import CommentSection from '../components/CommentSection';
 import ReportDialog from '../components/ReportDialog';
+import { VoiceRecorder, VoicePlayer } from '../components/VoiceRecorder';
+import CallUI from '../components/CallUI';
 import { useTheme } from '../App';
 
 const MainApp = ({ user, onLogout, updateUser }) => {
@@ -42,6 +45,9 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   const [chatRooms, setChatRooms] = useState([]);
   const [replyingTo, setReplyingTo] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(null);
+  const [dmSearchQuery, setDmSearchQuery] = useState('');
+  const [activeCall, setActiveCall] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
   const chatEndRef = useRef(null);
@@ -122,6 +128,14 @@ const MainApp = ({ user, onLogout, updateUser }) => {
       }
       if (data.type === 'reaction_update') {
         setChatMessages(prev => prev.map(m => m.message_id === data.message_id ? { ...m, reactions: data.reactions } : m));
+      }
+      // Incoming call handling
+      if (data.type === 'call_offer') {
+        setIncomingCall({ caller_id: data.caller_id, caller_name: data.caller_name, caller_picture: data.caller_picture, call_type: data.call_type, sdp: data.sdp });
+      }
+      if (data.type === 'call_unavailable') {
+        toast.error('User is not online');
+        setActiveCall(null);
       }
     };
 
@@ -300,6 +314,27 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   };
 
   const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
+
+  const sendVoiceChat = (voiceUrl) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: 'chat_message', chat_room: activeChatRoom, content: '🎤 Voice message', voice_url: voiceUrl }));
+  };
+
+  const sendVoiceDM = (voiceUrl) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !activeDM) return;
+    wsRef.current.send(JSON.stringify({ type: 'dm', receiver_id: activeDM, content: '🎤 Voice message', voice_url: voiceUrl }));
+  };
+
+  const startCall = (callType) => {
+    if (!activeDM || !activeDMUser) return;
+    setActiveCall({ targetUser: activeDMUser, callType, isIncoming: false });
+  };
+
+  const filteredDMConversations = dmConversations.filter(conv => {
+    if (!dmSearchQuery.trim()) return true;
+    const q = dmSearchQuery.toLowerCase();
+    return conv.user?.display_name?.toLowerCase().includes(q) || conv.user?.id_number?.toLowerCase().includes(q);
+  });
 
   const formatTime = (dateStr) => {
     if (!dateStr) return '';
@@ -685,6 +720,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                             <p className="text-[10px] font-bold opacity-70 mb-0.5">{msg.user?.display_name}</p>
                           )}
                           <p className="text-sm">{msg.content}</p>
+                          {msg.voice_url && <VoicePlayer src={`${API_BASE}${msg.voice_url}`} />}
                           <p className={`text-[10px] mt-0.5 ${msg.user_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.user_id !== user.user_id ? 'var(--text-3)' : undefined }}>
                             {formatChatTime(msg.created_at)}
                           </p>
@@ -746,6 +782,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                 )}
 
                 <div className="flex gap-2">
+                  <VoiceRecorder onSend={sendVoiceChat} compact />
                   <Input data-testid="chat-message-input"
                     value={newChatMessage}
                     onChange={(e) => setNewChatMessage(e.target.value)}
@@ -767,9 +804,11 @@ const MainApp = ({ user, onLogout, updateUser }) => {
           <div className="flex-1 flex overflow-hidden">
             <div className="w-72 bg-white border-r-2 border-[#111111] p-3 flex-shrink-0">
               <h2 className="text-sm font-black mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Direct Messages</h2>
+              <Input data-testid="dm-search-input" value={dmSearchQuery} onChange={(e) => setDmSearchQuery(e.target.value)}
+                placeholder="Search conversations..." className="border-2 border-[#111111] rounded-xl px-3 py-2 mb-3 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] text-xs" />
               <ScrollArea className="h-full">
                 <div className="space-y-1.5">
-                  {dmConversations.map((conv) => (
+                  {filteredDMConversations.map((conv) => (
                     <button key={conv.user?.user_id} data-testid={`dm-conversation-${conv.user?.user_id}`}
                       onClick={() => { setActiveDM(conv.user?.user_id); setActiveDMUser(conv.user); }}
                       className={`w-full text-left p-2.5 rounded-xl border-2 border-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px] ${
@@ -792,8 +831,10 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                       </div>
                     </button>
                   ))}
-                  {dmConversations.length === 0 && (
-                    <p className="text-xs text-[#4B4B4B] text-center py-8">No conversations yet</p>
+                  {filteredDMConversations.length === 0 && (
+                    <p className="text-xs text-[#4B4B4B] text-center py-8">
+                      {dmSearchQuery ? 'No conversations match' : 'No conversations yet'}
+                    </p>
                   )}
                 </div>
               </ScrollArea>
@@ -802,17 +843,27 @@ const MainApp = ({ user, onLogout, updateUser }) => {
             {activeDM ? (
               <div className="flex-1 flex flex-col p-4">
                 <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] flex-1 flex flex-col p-4 overflow-hidden">
-                  {/* DM Header */}
+                  {/* DM Header with Call Buttons */}
                   <div className="flex items-center gap-3 pb-3 mb-3 border-b border-[#D1D1D1]">
                     <Avatar className="w-8 h-8 border border-[#111111] cursor-pointer"
                       onClick={() => activeDMUser?.id_number && navigate(`/profile/${activeDMUser.id_number}`)}>
                       <AvatarImage src={activeDMUser?.profile_picture} />
                       <AvatarFallback className="text-xs">{activeDMUser?.display_name?.[0]}</AvatarFallback>
                     </Avatar>
-                    <span className="font-bold text-sm cursor-pointer hover:underline"
+                    <span className="font-bold text-sm cursor-pointer hover:underline flex-1"
                       onClick={() => activeDMUser?.id_number && navigate(`/profile/${activeDMUser.id_number}`)}>
                       {activeDMUser?.display_name}
                     </span>
+                    <div className="flex gap-1.5">
+                      <button data-testid="dm-audio-call" onClick={() => startCall('audio')}
+                        className="p-2 rounded-lg border-2 border-[#111111] bg-[#A7F3D0] text-[#111111] shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]" title="Voice Call">
+                        <Phone size={16} weight="bold" />
+                      </button>
+                      <button data-testid="dm-video-call" onClick={() => startCall('video')}
+                        className="p-2 rounded-lg border-2 border-[#111111] bg-[#2563EB] text-white shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]" title="Video Call">
+                        <VideoCamera size={16} weight="bold" />
+                      </button>
+                    </div>
                   </div>
 
                   <ScrollArea className="flex-1 mb-3">
@@ -825,6 +876,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                               : 'bg-[#F5F5F5] rounded-2xl rounded-bl-sm px-3 py-2'
                           }`}>
                             <p className="text-sm">{msg.content}</p>
+                            {msg.voice_url && <VoicePlayer src={`${API_BASE}${msg.voice_url}`} />}
                             <p className={`text-[10px] mt-0.5 ${msg.sender_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.sender_id !== user.user_id ? 'var(--text-3)' : undefined }}>
                               {formatChatTime(msg.created_at)}
                             </p>
@@ -836,6 +888,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                   </ScrollArea>
 
                   <div className="flex gap-2">
+                    <VoiceRecorder onSend={sendVoiceDM} compact />
                     <Input data-testid="dm-message-input"
                       value={newDMMessage}
                       onChange={(e) => setNewDMMessage(e.target.value)}
@@ -857,6 +910,31 @@ const MainApp = ({ user, onLogout, updateUser }) => {
           </div>
         )}
       </div>
+
+      {/* Active Call Overlay */}
+      {activeCall && (
+        <CallUI
+          ws={wsRef.current}
+          user={user}
+          targetUser={activeCall.targetUser}
+          callType={activeCall.callType}
+          isIncoming={false}
+          onEnd={() => setActiveCall(null)}
+        />
+      )}
+
+      {/* Incoming Call Overlay */}
+      {incomingCall && !activeCall && (
+        <CallUI
+          ws={wsRef.current}
+          user={user}
+          targetUser={{ user_id: incomingCall.caller_id, display_name: incomingCall.caller_name, profile_picture: incomingCall.caller_picture }}
+          callType={incomingCall.call_type}
+          isIncoming={true}
+          incomingOffer={incomingCall.sdp}
+          onEnd={() => setIncomingCall(null)}
+        />
+      )}
     </div>
   );
 };

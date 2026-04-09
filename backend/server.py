@@ -1726,6 +1726,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                     "content": doc['content'],
                     "created_at": doc['created_at'],
                     "is_gif": doc.get('is_gif', False),
+                    "voice_url": data.get('voice_url'),
                     "reply_to": doc.get('reply_to'),
                     "reply_data": reply_data,
                     "reactions": {},
@@ -1776,6 +1777,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                 )
                 doc = dm.model_dump()
                 doc['created_at'] = doc['created_at'].isoformat()
+                doc['voice_url'] = data.get('voice_url')
                 await db.direct_messages.insert_one(doc)
                 
                 dm_data = {
@@ -1787,11 +1789,57 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                     "content": doc['content'],
                     "images": doc.get('images', []),
                     "is_gif": doc.get('is_gif', False),
+                    "voice_url": doc.get('voice_url'),
                     "created_at": doc['created_at'],
                     "read": False
                 }
                 await manager.send_personal_message(dm_data, data['receiver_id'])
                 await manager.send_personal_message(dm_data, user_id)
+            
+            # WebRTC call signaling
+            elif data['type'] == 'call_offer':
+                target_id = data['target_id']
+                if target_id in manager.active_connections:
+                    await manager.send_personal_message({
+                        "type": "call_offer",
+                        "caller_id": user_id,
+                        "caller_name": data.get('caller_name', 'Someone'),
+                        "caller_picture": data.get('caller_picture'),
+                        "call_type": data.get('call_type', 'audio'),
+                        "sdp": data['sdp']
+                    }, target_id)
+                else:
+                    await manager.send_personal_message({"type": "call_unavailable", "target_id": target_id}, user_id)
+            
+            elif data['type'] == 'call_answer':
+                target_id = data['target_id']
+                await manager.send_personal_message({
+                    "type": "call_answer",
+                    "answerer_id": user_id,
+                    "sdp": data['sdp']
+                }, target_id)
+            
+            elif data['type'] == 'ice_candidate':
+                target_id = data['target_id']
+                await manager.send_personal_message({
+                    "type": "ice_candidate",
+                    "candidate": data['candidate'],
+                    "from_id": user_id
+                }, target_id)
+            
+            elif data['type'] == 'call_end':
+                target_id = data['target_id']
+                await manager.send_personal_message({
+                    "type": "call_end",
+                    "from_id": user_id
+                }, target_id)
+            
+            elif data['type'] == 'call_reject':
+                target_id = data['target_id']
+                await manager.send_personal_message({
+                    "type": "call_reject",
+                    "from_id": user_id
+                }, target_id)
     
     except WebSocketDisconnect:
         manager.disconnect(user_id)
@@ -1799,7 +1847,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 # File Upload endpoint
 @api_router.post("/upload")
 async def upload_file(file: UploadFile = File(...), user: User = Depends(get_current_user)):
-    allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime']
+    allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/wav']
     if file.content_type not in allowed_types:
         raise HTTPException(status_code=400, detail=f"File type {file.content_type} not allowed")
     
