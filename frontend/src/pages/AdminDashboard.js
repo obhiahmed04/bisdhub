@@ -132,7 +132,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-10 object-contain" />
+            <img src="/bisdhub-logo.png" alt="BISD HUB" className="w-28 h-auto object-contain" />
             <div>
               <h1 className="text-3xl md:text-4xl font-black" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="admin-title">Admin Panel</h1>
               <p className="text-sm font-medium text-[#4B4B4B]">Administration</p>

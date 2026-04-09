@@ -294,8 +294,8 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     const reason = window.prompt('Why are you reporting this message?');
     if (!reason) return;
     try {
-      await api.post('/chat/report', { message_id: messageId, chat_room: activeChatRoom, reason, category: 'other' });
-      toast.success('Message reported');
+      const res = await api.post('/chat/report', { message_id: messageId, chat_room: activeChatRoom, reason, category: 'other' });
+      toast.success(`Message reported! Reference #${res.data.serial_number}. Share this number with moderators.`);
     } catch (e) { toast.error('Failed to report'); }
   };
 
@@ -322,7 +322,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
       {/* Left Sidebar */}
       <div className="hidden md:flex md:w-60 bg-white border-r-2 border-[#111111] p-4 flex-col">
         <div className="flex items-center justify-between mb-6">
-          <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-10 object-contain" data-testid="app-logo" />
+          <img src="/bisdhub-logo.png" alt="BISD HUB" className="w-28 h-auto object-contain" data-testid="app-logo" />
           <div className="flex gap-1">
             <button onClick={toggleDarkMode} className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" data-testid="dark-mode-toggle">
               {darkMode ? <Sun size={18} weight="bold" /> : <Moon size={18} weight="bold" />}
@@ -427,7 +427,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
 
       {/* Mobile Header */}
       <div className="md:hidden bg-white border-b-2 border-[#111111] p-3 flex items-center justify-between">
-        <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-8 object-contain" />
+        <img src="/bisdhub-logo.png" alt="BISD HUB" className="w-20 h-auto object-contain" />
         <div className="flex gap-2 items-center">
           <button onClick={toggleDarkMode} className="p-1.5" data-testid="mobile-dark-toggle">
             {darkMode ? <Sun size={18} weight="bold" /> : <Moon size={18} weight="bold" />}
@@ -492,7 +492,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           </div>
                           <p className="text-xs cursor-pointer hover:underline" style={{ color: 'var(--text-3)' }}
                             onClick={() => navigate(`/profile/${post.user?.id_number}`)}>
-                            @{post.user?.id_number} {post.serial_number && <span className="badge-mono">#{post.serial_number}</span>} &middot; {formatTime(post.created_at)}
+                            @{post.user?.id_number} &middot; {formatTime(post.created_at)}
                           </p>
                         </div>
                       </div>
@@ -539,7 +539,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           </button>
                         )}
                         {post.user_id !== user.user_id && (
-                          <ReportDialog postId={post.post_id} onReported={loadFeed} />
+                          <ReportDialog postId={post.post_id} postSerial={post.serial_number} onReported={loadFeed} />
                         )}
                         {(post.user_id === user.user_id || user.is_admin || user.is_moderator) && (
                           <button onClick={() => deletePost(post.post_id)}
@@ -568,51 +568,70 @@ const MainApp = ({ user, onLogout, updateUser }) => {
             {/* Right Sidebar - Search */}
             <div className="hidden lg:block w-72 bg-white border-l-2 border-[#111111] p-4">
               <div className="mb-4">
-                <div className="relative">
-                  <Input
-                    data-testid="search-input"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search users, posts..."
-                    className="border-2 border-[#111111] rounded-xl px-4 py-2 pr-10 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] w-full"
-                  />
-                  <MagnifyingGlass size={18} weight="bold" className="absolute right-3 top-1/2 -translate-y-1/2 text-[#4B4B4B]" />
-                </div>
+                <form onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) navigate(`/search?q=${encodeURIComponent(searchQuery)}`); }}>
+                  <div className="relative">
+                    <Input
+                      data-testid="search-input"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search users, posts..."
+                      className="border-2 border-[#111111] rounded-xl px-4 py-2 pr-10 shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] w-full"
+                    />
+                    <button type="submit" data-testid="search-button" className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-[#2563EB] text-white hover:translate-y-[1px]">
+                      <MagnifyingGlass size={14} weight="bold" />
+                    </button>
+                  </div>
+                </form>
               </div>
 
-              {searchResults.users.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider mb-2 text-[#4B4B4B]">Users</h3>
-                  <div className="space-y-1.5">
-                    {searchResults.users.slice(0, 5).map((u) => (
-                      <div key={u.user_id} onClick={() => navigate(`/profile/${u.id_number}`)}
-                        className="flex items-center gap-2 p-2 rounded-lg border border-[#111111] hover:bg-[#A7F3D0] cursor-pointer">
-                        <Avatar className="w-8 h-8 border border-[#111111]">
-                          <AvatarImage src={u.profile_picture} />
-                          <AvatarFallback className="text-xs">{u.display_name?.[0]}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold truncate">{u.display_name}</p>
-                          <p className="text-xs text-[#4B4B4B]">@{u.id_number}</p>
-                        </div>
+              {/* Real-time dropdown results */}
+              {searchQuery.trim().length >= 2 && (searchResults.users.length > 0 || searchResults.posts.length > 0) && (
+                <div className="space-y-4">
+                  {searchResults.users.length > 0 && (
+                    <div>
+                      <h3 className="text-[10px] font-bold uppercase tracking-wider mb-2 text-[#4B4B4B]">People</h3>
+                      <div className="space-y-1.5">
+                        {searchResults.users.slice(0, 5).map((u) => (
+                          <div key={u.user_id} data-testid={`quick-search-user-${u.user_id}`} onClick={() => { navigate(`/profile/${u.id_number}`); setSearchQuery(''); }}
+                            className="flex items-center gap-2 p-2 rounded-lg border border-[#111111] hover:bg-[#A7F3D0] cursor-pointer transition-colors">
+                            <Avatar className="w-8 h-8 border border-[#111111]">
+                              <AvatarImage src={u.profile_picture} />
+                              <AvatarFallback className="text-xs">{u.display_name?.[0]}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-bold truncate">{u.display_name}</p>
+                              <p className="text-[10px] text-[#4B4B4B]">@{u.id_number}</p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
+
+                  {searchResults.posts.length > 0 && (
+                    <div>
+                      <h3 className="text-[10px] font-bold uppercase tracking-wider mb-2 text-[#4B4B4B]">Posts</h3>
+                      <div className="space-y-1.5">
+                        {searchResults.posts.slice(0, 3).map((p) => (
+                          <div key={p.post_id} className="p-2 rounded-lg border border-[#111111]">
+                            <p className="font-bold text-xs">{p.user?.display_name}</p>
+                            <p className="text-xs truncate text-[#4B4B4B]">{p.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <button onClick={() => { navigate(`/search?q=${encodeURIComponent(searchQuery)}`); setSearchQuery(''); }}
+                    data-testid="view-all-results"
+                    className="w-full text-center text-xs font-bold py-2 rounded-lg border-2 border-[#111111] bg-[#2563EB] text-white shadow-[2px_2px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[1px] hover:translate-x-[1px]">
+                    View all results
+                  </button>
                 </div>
               )}
 
-              {searchResults.posts.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider mb-2 text-[#4B4B4B]">Posts</h3>
-                  <div className="space-y-1.5">
-                    {searchResults.posts.slice(0, 3).map((p) => (
-                      <div key={p.post_id} className="p-2 rounded-lg border border-[#111111] text-sm">
-                        <p className="font-bold text-xs">{p.user?.display_name}</p>
-                        <p className="text-xs truncate">{p.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {searchQuery.trim().length >= 2 && searchResults.users.length === 0 && searchResults.posts.length === 0 && (
+                <p className="text-xs text-center py-4 text-[#4B4B4B]">No results found</p>
               )}
             </div>
           </div>
@@ -667,7 +686,6 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           )}
                           <p className="text-sm">{msg.content}</p>
                           <p className={`text-[10px] mt-0.5 ${msg.user_id === user.user_id ? 'text-white/60' : ''}`} style={{ color: msg.user_id !== user.user_id ? 'var(--text-3)' : undefined }}>
-                            {msg.serial_number && <span className="mr-1">#{msg.serial_number}</span>}
                             {formatChatTime(msg.created_at)}
                           </p>
 

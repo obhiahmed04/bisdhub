@@ -331,7 +331,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         return User(**user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 async def verify_admin(user: User = Depends(get_current_user)):
@@ -1429,11 +1429,39 @@ async def get_reports(mod: User = Depends(verify_moderator), status: str = "pend
             report['created_at'] = datetime.fromisoformat(report['created_at'])
         # Get post and reporter info
         post = await db.posts.find_one({"post_id": report['post_id']}, {"_id": 0})
-        reporter = await db.users.find_one({"user_id": report['reporter_id']}, {"_id": 0, "display_name": 1})
+        reporter = await db.users.find_one({"user_id": report['reporter_id']}, {"_id": 0, "display_name": 1, "id_number": 1, "user_id": 1})
         report['post'] = post
         report['reporter'] = reporter
+        # Get post author (violator) info
+        if post:
+            violator = await db.users.find_one({"user_id": post.get('user_id')}, {"_id": 0, "display_name": 1, "id_number": 1, "user_id": 1, "current_class": 1, "section": 1})
+            report['violator'] = violator
     
     return reports
+
+@api_router.get("/mod/chat-reports")
+async def get_chat_reports(mod: User = Depends(verify_moderator), status: str = "pending"):
+    reports = await db.reports.find({"status": status, "type": "chat_message"}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    for report in reports:
+        if isinstance(report.get('created_at'), str):
+            report['created_at'] = datetime.fromisoformat(report['created_at'])
+        # Get reporter info
+        reporter = await db.users.find_one({"user_id": report.get('reporter_id')}, {"_id": 0, "display_name": 1, "id_number": 1, "user_id": 1})
+        report['reporter'] = reporter
+        # Get the chat message
+        msg = await db.chat_messages.find_one({"message_id": report.get('message_id')}, {"_id": 0})
+        report['message'] = msg
+        if msg:
+            violator = await db.users.find_one({"user_id": msg.get('user_id')}, {"_id": 0, "display_name": 1, "id_number": 1, "user_id": 1, "current_class": 1, "section": 1})
+            report['violator'] = violator
+    
+    return reports
+
+@api_router.put("/mod/chat-reports/{report_id}/resolve")
+async def resolve_chat_report(report_id: str, status: str, mod: User = Depends(verify_moderator)):
+    await db.reports.update_one({"report_id": report_id}, {"$set": {"status": status}})
+    return {"status": "success"}
 
 @api_router.post("/mod/users/action")
 async def moderate_user(action: ModerationAction, mod: User = Depends(verify_moderator)):
@@ -1576,14 +1604,18 @@ async def get_action_logs(
 ):
     query = {}
     if search:
-        query = {
-            "$or": [
-                {"admin_name": {"$regex": search, "$options": "i"}},
-                {"target_user_name": {"$regex": search, "$options": "i"}},
-                {"action_type": {"$regex": search, "$options": "i"}},
-                {"details": {"$regex": search, "$options": "i"}}
-            ]
-        }
+        or_conditions = [
+            {"admin_name": {"$regex": search, "$options": "i"}},
+            {"target_user_name": {"$regex": search, "$options": "i"}},
+            {"action_type": {"$regex": search, "$options": "i"}},
+            {"details": {"$regex": search, "$options": "i"}}
+        ]
+        try:
+            serial_int = int(search.strip().lstrip('#'))
+            or_conditions.append({"serial_number": serial_int})
+        except ValueError:
+            pass
+        query = {"$or": or_conditions}
     
     logs = await db.action_logs.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
     

@@ -62,7 +62,7 @@ const LoginPage = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--bg-base)' }}>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/bisdhub-logo.png" alt="BISD HUB" className="h-16 mx-auto mb-3 object-contain" data-testid="login-logo" />
+          <img src="/bisdhub-logo.png" alt="BISD HUB" className="w-44 h-auto mx-auto mb-3 object-contain" data-testid="login-logo" />
           <p className="text-sm mt-1" style={{ color: 'var(--text-2)' }}>Your school community</p>
         </div>
 

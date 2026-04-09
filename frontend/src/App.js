@@ -12,6 +12,7 @@ import ManagementPanel from './pages/ManagementPanel';
 import UserProfile from './pages/UserProfile';
 import SettingsPage from './pages/SettingsPage';
 import FriendsPage from './pages/FriendsPage';
+import SearchResultsPage from './pages/SearchResultsPage';
 import { Toaster } from './components/ui/sonner';
 
 // Theme context
@@ -65,6 +66,7 @@ function App() {
             <Route path="/banned" element={token && isBanned ? <BannedPage user={user} onLogout={logout} /> : <Navigate to="/" />} />
             <Route path="/settings" element={token && !isRestricted ? <SettingsPage user={user} onLogout={logout} updateUser={updateUser} /> : <Navigate to="/login" />} />
             <Route path="/friends" element={token && !isRestricted ? <FriendsPage user={user} /> : <Navigate to="/login" />} />
+            <Route path="/search" element={token && !isRestricted ? <SearchResultsPage user={user} /> : <Navigate to="/login" />} />
             <Route path="/" element={
               token 
                 ? (isBanned ? <Navigate to="/banned" /> : <MainApp user={user} onLogout={logout} updateUser={updateUser} />)
