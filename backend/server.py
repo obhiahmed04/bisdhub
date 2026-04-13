@@ -50,232 +50,149 @@ logger = logging.getLogger(__name__)
 
 from pymongo import MongoClient
 from passlib.context import CryptContext
+import os
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-TEST_ACCOUNT_DEFINITIONS = [
-    {
-        "id_number": "ADMIN001",
-        "full_name": "BISD Administrator",
-        "display_name": "Admin",
-        "role": "Administrator",
-        "badges": ["Administrator"],
-        "password": "admin123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "N/A",
-        "section": "N/A",
-        "email": "admin@bisdhub.com",
-        "bio": "BISD HUB Administrator"
-    },
-    {
-        "id_number": "OWNER001",
-        "full_name": "Project Owner",
-        "display_name": "Owner",
-        "role": "Project Owner",
-        "badges": ["Project Owner", "Superior"],
-        "password": "owner123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": True,
-        "current_class": "Graduated",
-        "section": "A",
-        "email": "owner001@bisdhub.com",
-        "bio": "Project Owner account for testing"
-    },
-    {
-        "id_number": "MGMT001",
-        "full_name": "Management Head",
-        "display_name": "Management",
-        "role": "Management",
-        "badges": ["Management", "Superior"],
-        "password": "management123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": True,
-        "current_class": "Graduated",
-        "section": "A",
-        "email": "mgmt001@bisdhub.com",
-        "bio": "Management account for testing"
-    },
-    {
-        "id_number": "CM001",
-        "full_name": "Community Manager",
-        "display_name": "Community Manager",
-        "role": "Community Manager",
-        "badges": ["Community Manager", "Admin Supervisor"],
-        "password": "cm123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 12",
-        "section": "B1",
-        "email": "cm001@bisdhub.com",
-        "bio": "Community Manager account for testing"
-    },
-    {
-        "id_number": "COS001",
-        "full_name": "Chief of Staff",
-        "display_name": "Chief of Staff",
-        "role": "Chief of Staff",
-        "badges": ["Chief of Staff", "Admin Supervisor"],
-        "password": "cos123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": True,
-        "current_class": "Graduated",
-        "section": "A",
-        "email": "cos001@bisdhub.com",
-        "bio": "Chief of Staff account for testing"
-    },
-    {
-        "id_number": "CA001",
-        "full_name": "Chief Administrator",
-        "display_name": "Chief Administrator",
-        "role": "Chief Administrator",
-        "badges": ["Chief Administrator", "Super Admin"],
-        "password": "ca123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 12",
-        "section": "A1",
-        "email": "ca001@bisdhub.com",
-        "bio": "Chief Administrator account for testing"
-    },
-    {
-        "id_number": "HA001",
-        "full_name": "Head Administrator",
-        "display_name": "Head Administrator",
-        "role": "Head Administrator",
-        "badges": ["Head Administrator"],
-        "password": "ha123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 11",
-        "section": "A1",
-        "email": "ha001@bisdhub.com",
-        "bio": "Head Administrator account for testing"
-    },
-    {
-        "id_number": "ADMIN002",
-        "full_name": "Administrator Two",
-        "display_name": "Administrator Two",
-        "role": "Administrator",
-        "badges": ["Administrator"],
-        "password": "admin2123",
-        "is_admin": True,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 11",
-        "section": "B2",
-        "email": "admin002@bisdhub.com",
-        "bio": "Second administrator account for testing"
-    },
-    {
-        "id_number": "CMOD001",
-        "full_name": "Chief Moderator",
-        "display_name": "Chief Moderator",
-        "role": "Chief Moderator",
-        "badges": ["Chief Moderator", "Super Mod"],
-        "password": "cmod123",
-        "is_admin": False,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 12",
-        "section": "C1",
-        "email": "cmod001@bisdhub.com",
-        "bio": "Chief Moderator account for testing"
-    },
-    {
-        "id_number": "HMOD001",
-        "full_name": "Head Moderator",
-        "display_name": "Head Moderator",
-        "role": "Head Moderator",
-        "badges": ["Head Moderator", "Super Mod"],
-        "password": "hmod123",
-        "is_admin": False,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 11",
-        "section": "C2",
-        "email": "hmod001@bisdhub.com",
-        "bio": "Head Moderator account for testing"
-    },
-    {
-        "id_number": "MOD001",
-        "full_name": "Moderator One",
-        "display_name": "Moderator One",
-        "role": "Moderator",
-        "badges": ["Moderator"],
-        "password": "mod123",
-        "is_admin": False,
-        "is_moderator": True,
-        "is_ex_student": False,
-        "current_class": "Grade 10",
-        "section": "C3",
-        "email": "mod001@bisdhub.com",
-        "bio": "Moderator account for testing"
-    },
-    {
-        "id_number": "USER001",
-        "full_name": "Test User One",
-        "display_name": "Test User One",
-        "role": "user",
-        "badges": [],
-        "password": "user123",
-        "is_admin": False,
-        "is_moderator": False,
-        "is_ex_student": False,
-        "current_class": "Grade 10",
-        "section": "B1",
-        "email": "user001@bisdhub.com",
-        "bio": "Regular user account for testing"
-    }
-]
+
+@app.get("/dev/create-admin")
+async def create_admin_dev():
+    return await _upsert_test_user(
+        id_number="ADMIN001",
+        password="admin123",
+        role="Administrator",
+        full_name="Administrator",
+        badges=["admin"],
+        is_admin=True,
+        is_moderator=False,
+        current_status="staff",
+        is_ex_student=False,
+    )
+
+@app.get("/dev/create-owner")
+async def create_owner_dev():
+    return await _upsert_test_user(
+        id_number="OWNER001",
+        password="owner123",
+        role="Project Owner",
+        full_name="Project Owner",
+        badges=["owner", "admin"],
+        is_admin=True,
+        is_moderator=True,
+        current_status="staff",
+        is_ex_student=False,
+    )
+
+@app.get("/dev/create-test-users")
+async def create_test_users_dev():
+    accounts = [
+        ("ADMIN001", "admin123", "Administrator", "Administrator", ["admin"], True, False),
+        ("OWNER001", "owner123", "Project Owner", "Project Owner", ["owner", "admin"], True, True),
+        ("MGMT001", "management123", "Management", "Management", ["management"], True, False),
+        ("CM001", "cm123", "Community Manager", "Community Manager", ["community_manager"], False, False),
+        ("COS001", "cos123", "Chief of Staff", "Chief of Staff", ["chief_of_staff"], False, False),
+        ("CA001", "ca123", "Chief Administrator", "Chief Administrator", ["chief_administrator"], True, False),
+        ("HA001", "ha123", "Head Administrator", "Head Administrator", ["head_administrator"], True, False),
+        ("ADMIN002", "admin2123", "Administrator", "Administrator 2", ["admin"], True, False),
+        ("CMOD001", "cmod123", "Chief Moderator", "Chief Moderator", ["chief_moderator"], False, True),
+        ("HMOD001", "hmod123", "Head Moderator", "Head Moderator", ["head_moderator"], False, True),
+        ("MOD001", "mod123", "Moderator", "Moderator", ["moderator"], False, True),
+        ("USER001", "user123", "user", "Regular User", [], False, False),
+    ]
+    created = []
+    for id_number, password, role, full_name, badges, is_admin, is_moderator in accounts:
+        result = await _upsert_test_user(
+            id_number=id_number,
+            password=password,
+            role=role,
+            full_name=full_name,
+            badges=badges,
+            is_admin=is_admin,
+            is_moderator=is_moderator,
+            current_status="staff" if role != "user" else "student",
+            is_ex_student=False,
+            return_payload=False,
+        )
+        created.append({"id_number": id_number, "password": password, "role": role, "status": result["status"]})
+    return {"status": "test users ready", "accounts": created}
+
+async def _upsert_test_user(
+    id_number: str,
+    password: str,
+    role: str,
+    full_name: str,
+    badges: list,
+    is_admin: bool,
+    is_moderator: bool,
+    current_status: str = "student",
+    is_ex_student: bool = False,
+    return_payload: bool = True,
+):
+    hashed_password = pwd_context.hash(password)
+    user = build_complete_test_user(
+        id_number=id_number,
+        full_name=full_name,
+        role=role,
+        password_hash=hashed_password,
+        badges=badges,
+        is_admin=is_admin,
+        is_moderator=is_moderator,
+        current_status=current_status,
+        is_ex_student=is_ex_student,
+    )
+    await db.users.update_one({"id_number": id_number}, {"$set": user}, upsert=True)
+    result = {"status": "upserted", "login": f"{id_number} / {password}"}
+    if return_payload:
+        return result
+    return result
 
 
-def build_test_user(account: Dict[str, Any]) -> Dict[str, Any]:
-    hashed_password = pwd_context.hash(account["password"])
-    is_alumni = account.get("is_ex_student", False)
-    current_status = "alumni" if is_alumni else "student"
-    date_of_leaving = "2024-01-01" if is_alumni else None
-    last_class = "12" if is_alumni else None
+def build_complete_test_user(
+    id_number: str,
+    full_name: str,
+    role: str,
+    password_hash: str,
+    badges: list,
+    is_admin: bool,
+    is_moderator: bool,
+    current_status: str,
+    is_ex_student: bool,
+):
+    now = datetime.now(timezone.utc)
+    email_local = id_number.lower()
     return {
-        "user_id": f"user-{account['id_number'].lower()}",
-        "id_number": account["id_number"],
-        "full_name": account["full_name"],
-        "display_name": account.get("display_name") or account["full_name"],
-        "date_of_birth": account.get("date_of_birth", "01/01/1990"),
-        "current_class": account.get("current_class", "Grade 10"),
-        "section": account.get("section", "B1"),
-        "email": account.get("email", f"{account['id_number'].lower()}@bisdhub.com"),
-        "phone_number": account.get("phone_number"),
-        "is_ex_student": is_alumni,
-        "date_of_leaving": date_of_leaving,
-        "last_class": last_class,
+        "user_id": str(uuid.uuid4()),
+        "id_number": id_number,
+        "full_name": full_name,
+        "display_name": full_name,
+        "date_of_birth": "2000-01-01",
+        "current_class": "12" if not is_ex_student else "Graduated",
+        "section": "A",
+        "email": f"{email_local}@test.local",
+        "phone_number": None,
+        "is_ex_student": is_ex_student,
+        "date_of_leaving": None,
+        "last_class": None,
         "current_status": current_status,
-        "password_hash": hashed_password,
-        "profile_picture": account.get("profile_picture"),
-        "banner_image": account.get("banner_image"),
-        "bio": account.get("bio", ""),
-        "badges": account.get("badges", []),
-        "role": account.get("role", "user"),
+        "password_hash": password_hash,
+        "profile_picture": None,
+        "banner_image": None,
+        "bio": f"{full_name} account for testing",
+        "badges": badges,
+        "role": role,
         "is_profile_public": True,
         "is_followers_public": True,
         "is_following_public": True,
         "is_friends_public": True,
-        "is_admin": account.get("is_admin", False),
-        "is_moderator": account.get("is_moderator", False),
+        "is_admin": is_admin,
+        "is_moderator": is_moderator,
         "is_banned": False,
         "is_muted": False,
         "ban_reason": None,
         "mute_until": None,
         "registration_status": "approved",
         "push_notifications_enabled": True,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now,
         "followers": [],
         "following": [],
         "friends": [],
@@ -284,15 +201,17 @@ def build_test_user(account: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def normalize_user_document(user: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_user_document(user: dict) -> dict:
+    if not user:
+        return user
     normalized = dict(user)
-    normalized.setdefault("user_id", f"user-{normalized.get('id_number', str(uuid.uuid4())).lower()}")
-    normalized.setdefault("full_name", normalized.get("display_name") or normalized.get("id_number", "Unknown User"))
-    normalized.setdefault("display_name", normalized.get("full_name") or normalized.get("id_number", "Unknown User"))
-    normalized.setdefault("date_of_birth", "01/01/1990")
-    normalized.setdefault("current_class", "N/A")
-    normalized.setdefault("section", "N/A")
-    normalized.setdefault("email", f"{normalized.get('id_number', 'user').lower()}@bisdhub.com")
+    normalized.setdefault("user_id", str(uuid.uuid4()))
+    normalized.setdefault("full_name", normalized.get("display_name") or normalized.get("id_number") or "User")
+    normalized.setdefault("display_name", normalized.get("full_name") or normalized.get("id_number") or "User")
+    normalized.setdefault("date_of_birth", "2000-01-01")
+    normalized.setdefault("current_class", "12")
+    normalized.setdefault("section", "A")
+    normalized.setdefault("email", f"{str(normalized.get('id_number', 'user')).lower()}@test.local")
     normalized.setdefault("phone_number", None)
     normalized.setdefault("is_ex_student", False)
     normalized.setdefault("date_of_leaving", None)
@@ -315,44 +234,13 @@ def normalize_user_document(user: Dict[str, Any]) -> Dict[str, Any]:
     normalized.setdefault("mute_until", None)
     normalized.setdefault("registration_status", "approved")
     normalized.setdefault("push_notifications_enabled", True)
+    normalized.setdefault("created_at", datetime.now(timezone.utc))
     normalized.setdefault("followers", [])
     normalized.setdefault("following", [])
     normalized.setdefault("friends", [])
     normalized.setdefault("friend_requests_sent", [])
     normalized.setdefault("friend_requests_received", [])
-    normalized.setdefault("password_hash", "")
-    normalized.setdefault("created_at", datetime.now(timezone.utc))
     return normalized
-
-
-@app.get("/dev/create-owner")
-async def create_owner_dev():
-    client = MongoClient(os.getenv("MONGO_URL"))
-    seeded = build_test_user(next(account for account in TEST_ACCOUNT_DEFINITIONS if account["id_number"] == "OWNER001"))
-    db_sync = client[os.getenv("DB_NAME")]
-    db_sync["users"].replace_one({"id_number": "OWNER001"}, seeded, upsert=True)
-    return {"status": "owner ready", "login": "OWNER001 / owner123"}
-
-
-@app.get("/dev/create-admin")
-async def create_admin_dev():
-    client = MongoClient(os.getenv("MONGO_URL"))
-    seeded = build_test_user(next(account for account in TEST_ACCOUNT_DEFINITIONS if account["id_number"] == "ADMIN001"))
-    db_sync = client[os.getenv("DB_NAME")]
-    db_sync["users"].replace_one({"id_number": "ADMIN001"}, seeded, upsert=True)
-    return {"status": "admin ready", "login": "ADMIN001 / admin123"}
-
-
-@app.get("/dev/create-test-users")
-async def create_test_users_dev():
-    client = MongoClient(os.getenv("MONGO_URL"))
-    db_sync = client[os.getenv("DB_NAME")]
-    created = []
-    for account in TEST_ACCOUNT_DEFINITIONS:
-        seeded = build_test_user(account)
-        db_sync["users"].replace_one({"id_number": account["id_number"]}, seeded, upsert=True)
-        created.append({"id_number": account["id_number"], "password": account["password"], "role": account["role"]})
-    return {"status": "test users ready", "accounts": created}
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -635,7 +523,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-        return User(**normalize_user_document(user))
+        user = normalize_user_document(user)
+        return User(**user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except Exception:
@@ -986,7 +875,8 @@ async def login(login_request: UserLogin):
     }
     token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     
-    user_data = User(**normalize_user_document(user))
+    user = normalize_user_document(user)
+    user_data = User(**user)
     response_data = user_data.model_dump(exclude={'password_hash'})
     
     # Add status flags for routing
@@ -1018,7 +908,8 @@ async def update_profile(update: ProfileUpdate, user: User = Depends(get_current
         )
     
     updated_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
-    return User(**normalize_user_document(updated_user)).model_dump(exclude={'password_hash'})
+    updated_user = normalize_user_document(updated_user)
+    return User(**updated_user).model_dump(exclude={'password_hash'})
 
 # Search users (must come before /users/{id_number} to avoid route conflict)
 @api_router.get("/users/search")
@@ -1040,7 +931,7 @@ async def search_users(
     # Filter out private profiles
     results = []
     for u in users:
-        user_obj = User(**normalize_user_document(u))
+        user_obj = User(**u)
         if user_obj.is_profile_public or user_obj.user_id == user.user_id:
             results.append(user_obj.model_dump(exclude={'password_hash'}))
     
@@ -1053,7 +944,7 @@ async def get_user_profile(id_number: str, user: User = Depends(get_current_user
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    user_obj = User(**normalize_user_document(target_user))
+    user_obj = User(**target_user)
     
     # Check if profile is private
     if not user_obj.is_profile_public and user_obj.user_id != user.user_id:
