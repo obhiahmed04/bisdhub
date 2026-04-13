@@ -82,7 +82,7 @@ def _make_full_user_doc(
         date_of_birth="2000-01-01",
         current_class=current_class,
         section=section,
-        email=f"{email_local}@bisdhub.test",
+        email=f"{email_local}@example.com",
         phone_number=None,
         is_ex_student=is_ex_student,
         date_of_leaving="2024-01-01" if is_ex_student else None,
@@ -128,7 +128,10 @@ def _normalize_user_doc(user: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
     normalized.setdefault("date_of_birth", "2000-01-01")
     normalized.setdefault("current_class", "12")
     normalized.setdefault("section", "A")
-    normalized.setdefault("email", f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@bisdhub.test")
+    normalized.setdefault("email", f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@example.com")
+    email_value = normalized.get("email")
+    if not isinstance(email_value, str) or email_value.endswith(".test") or "@" not in email_value:
+        normalized["email"] = f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@example.com"
     normalized.setdefault("phone_number", None)
     normalized.setdefault("is_ex_student", False)
     normalized.setdefault("date_of_leaving", None)
