@@ -48,13 +48,55 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ===== DEV ONLY: CREATE ADMIN USER =====
-@app.get("/dev/create-admin")
-async def create_admin_dev():
+from pymongo import MongoClient
+from passlib.context import CryptContext
+import os
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+@app.get("/dev/create-owner")
+async def create_owner_dev():
     try:
-        from scripts.create_admin import create_admin
-        create_admin()
-        return {"status": "admin created", "id": "ADMIN001", "password": "admin123"}
+        client = MongoClient(os.getenv("MONGO_URL"))
+        db = client[os.getenv("DB_NAME")]
+        users = db["users"]
+
+        existing = users.find_one({"id_number": "OWNER001"})
+        if existing:
+            return {"status": "already exists"}
+
+        hashed_password = pwd_context.hash("owner123")
+
+        user = {
+            "id_number": "OWNER001",
+            "full_name": "Owner User",
+            "password_hash": hashed_password,
+
+            # 🔥 IMPORTANT FLAGS
+            "role": "owner",
+            "is_active": True,
+            "is_admin": True,
+            "is_moderator": True,
+
+            # social system
+            "followers": [],
+            "following": [],
+
+            # badges (your UI likely checks this)
+            "badges": ["owner", "admin"],
+
+            # safe defaults
+            "bio": "",
+            "profile_picture": "",
+        }
+
+        users.insert_one(user)
+
+        return {
+            "status": "owner created",
+            "login": "OWNER001 / owner123"
+        }
+
     except Exception as e:
         return {"error": str(e)}
 
