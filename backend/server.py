@@ -49,30 +49,91 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-from pymongo import MongoClient
-from passlib.context import CryptContext
+# Dev/test user helpers
+def _make_full_user_doc(
+    id_number: str,
+    password: str,
+    full_name: str,
+    role: str = "user",
+    *,
+    is_admin: bool = False,
+    is_moderator: bool = False,
+    badges: Optional[List[str]] = None,
+    current_status: Optional[str] = None,
+    current_class: str = "12",
+    section: str = "A",
+    is_ex_student: bool = False,
+) -> Dict[str, Any]:
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    safe_name = full_name.strip() or id_number
+    parts = safe_name.split()
+    display_name = f"{parts[0]} {parts[-1]}" if len(parts) > 1 else safe_name
+    email_local = re.sub(r"[^a-zA-Z0-9]+", "", id_number.lower()) or "user"
+    role_badges = badges[:] if badges else []
+    if role and role.lower() not in [b.lower() for b in role_badges]:
+        role_badges.append(role)
+    if is_admin and "admin" not in [b.lower() for b in role_badges]:
+        role_badges.append("admin")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    doc = User(
+        id_number=id_number,
+        full_name=safe_name,
+        display_name=display_name,
+        date_of_birth="2000-01-01",
+        current_class=current_class,
+        section=section,
+        email=f"{email_local}@bisdhub.test",
+        phone_number=None,
+        is_ex_student=is_ex_student,
+        date_of_leaving="2024-01-01" if is_ex_student else None,
+        last_class="12" if is_ex_student else None,
+        current_status=current_status or ("alumni" if is_ex_student else "student"),
+        password_hash=password_hash,
+        profile_picture="",
+        banner_image="",
+        bio=f"{role} account for testing",
+        badges=role_badges,
+        role=role,
+        is_profile_public=True,
+        is_followers_public=True,
+        is_following_public=True,
+        is_friends_public=True,
+        is_admin=is_admin,
+        is_moderator=is_moderator,
+        is_banned=False,
+        is_muted=False,
+        ban_reason=None,
+        mute_until=None,
+        registration_status="approved",
+        push_notifications_enabled=True,
+        followers=[],
+        following=[],
+        friends=[],
+        friend_requests_sent=[],
+        friend_requests_received=[]
+    ).model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    return doc
 
 
-def normalize_user_document(user: dict) -> dict:
-    """Fill missing fields so legacy/test documents do not crash User(**user)."""
+def _normalize_user_doc(user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not user:
         return user
 
     normalized = dict(user)
+
     normalized.setdefault("user_id", str(uuid.uuid4()))
-    normalized.setdefault("display_name", normalized.get("full_name", normalized.get("id_number", "User")))
+    normalized.setdefault("full_name", normalized.get("display_name") or normalized.get("id_number", "User"))
+    normalized.setdefault("display_name", normalized.get("full_name"))
     normalized.setdefault("date_of_birth", "2000-01-01")
-    normalized.setdefault("current_class", "Graduated" if normalized.get("is_ex_student") else "12")
+    normalized.setdefault("current_class", "12")
     normalized.setdefault("section", "A")
-    normalized.setdefault("email", f"{normalized.get('id_number', 'user').lower()}@example.com")
+    normalized.setdefault("email", f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@bisdhub.test")
     normalized.setdefault("phone_number", None)
-    normalized.setdefault("is_ex_student", bool(normalized.get("current_status") == "alumni" or normalized.get("date_of_leaving")))
+    normalized.setdefault("is_ex_student", False)
     normalized.setdefault("date_of_leaving", None)
     normalized.setdefault("last_class", None)
-    normalized.setdefault("current_status", "alumni" if normalized.get("is_ex_student") else "student")
-    normalized.setdefault("password_hash", "")
+    normalized.setdefault("current_status", "student")
     normalized.setdefault("profile_picture", "")
     normalized.setdefault("banner_image", "")
     normalized.setdefault("bio", "")
@@ -90,124 +151,63 @@ def normalize_user_document(user: dict) -> dict:
     normalized.setdefault("mute_until", None)
     normalized.setdefault("registration_status", "approved")
     normalized.setdefault("push_notifications_enabled", True)
-    normalized.setdefault("created_at", datetime.now(timezone.utc))
     normalized.setdefault("followers", [])
     normalized.setdefault("following", [])
     normalized.setdefault("friends", [])
     normalized.setdefault("friend_requests_sent", [])
     normalized.setdefault("friend_requests_received", [])
+
+    created_at = normalized.get("created_at")
+    if isinstance(created_at, str):
+        try:
+            normalized["created_at"] = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except Exception:
+            normalized["created_at"] = datetime.now(timezone.utc)
+    elif created_at is None:
+        normalized["created_at"] = datetime.now(timezone.utc)
+
     return normalized
 
 
-def build_test_user(id_number: str, password: str, full_name: str, role: str, badges: list[str] | None = None) -> dict:
-    role_lower = role.lower()
-    is_owner_like = role in ["Project Owner", "owner"]
-    is_admin = role in [
-        "Project Owner", "Management", "Community Manager", "Chief of Staff",
-        "Chief Administrator", "Head Administrator", "Administrator", "owner"
-    ]
-    is_moderator = role in ["Chief Moderator", "Head Moderator", "Moderator"] or is_admin
-    is_ex_student = True if is_owner_like or role != "user" else False
-    current_status = "alumni" if is_ex_student else "student"
-    return normalize_user_document({
-        "user_id": str(uuid.uuid4()),
-        "id_number": id_number,
-        "full_name": full_name,
-        "display_name": full_name,
-        "date_of_birth": "2000-01-01",
-        "current_class": "Graduated" if is_ex_student else "12",
-        "section": "A",
-        "email": f"{id_number.lower()}@example.com",
-        "phone_number": None,
-        "is_ex_student": is_ex_student,
-        "date_of_leaving": "2024-01-01" if is_ex_student else None,
-        "last_class": "12" if is_ex_student else None,
-        "current_status": current_status,
-        "password_hash": pwd_context.hash(password),
-        "profile_picture": "",
-        "banner_image": "",
-        "bio": f"{role} account for testing",
-        "badges": badges or [],
-        "role": role,
-        "is_profile_public": True,
-        "is_followers_public": True,
-        "is_following_public": True,
-        "is_friends_public": True,
-        "is_admin": is_admin,
-        "is_moderator": is_moderator,
-        "is_banned": False,
-        "is_muted": False,
-        "ban_reason": None,
-        "mute_until": None,
-        "registration_status": "approved",
-        "push_notifications_enabled": True,
-        "created_at": datetime.now(timezone.utc),
-        "followers": [],
-        "following": [],
-        "friends": [],
-        "friend_requests_sent": [],
-        "friend_requests_received": [],
-    })
-
-
-def upsert_test_user(user_doc: dict) -> str:
-    client = MongoClient(os.getenv("MONGO_URL"))
-    sync_db = client[os.getenv("DB_NAME")]
-    users = sync_db["users"]
-    result = users.update_one(
-        {"id_number": user_doc["id_number"]},
-        {"$set": user_doc},
-        upsert=True,
-    )
-    return "upserted" if (result.upserted_id is not None or result.modified_count >= 0) else "unknown"
-
-
-@app.get("/dev/create-admin")
-async def create_admin_dev():
-    try:
-        user = build_test_user("ADMIN001", "admin123", "Administrator", "Administrator", ["admin"])
-        status = upsert_test_user(user)
-        return {"status": status, "login": "ADMIN001 / admin123"}
-    except Exception as e:
-        return {"error": str(e)}
-
+TEST_USERS = [
+    {"id_number": "ADMIN001", "password": "admin123", "role": "Administrator", "full_name": "Administrator", "is_admin": True},
+    {"id_number": "OWNER001", "password": "owner123", "role": "Project Owner", "full_name": "Project Owner", "is_admin": True, "is_moderator": True, "is_ex_student": True},
+    {"id_number": "MGMT001", "password": "management123", "role": "Management", "full_name": "Management", "is_admin": True},
+    {"id_number": "CM001", "password": "cm123", "role": "Community Manager", "full_name": "Community Manager", "is_admin": True},
+    {"id_number": "COS001", "password": "cos123", "role": "Chief of Staff", "full_name": "Chief of Staff", "is_admin": True},
+    {"id_number": "CA001", "password": "ca123", "role": "Chief Administrator", "full_name": "Chief Administrator", "is_admin": True},
+    {"id_number": "HA001", "password": "ha123", "role": "Head Administrator", "full_name": "Head Administrator", "is_admin": True},
+    {"id_number": "ADMIN002", "password": "admin2123", "role": "Administrator", "full_name": "Administrator Two", "is_admin": True},
+    {"id_number": "CMOD001", "password": "cmod123", "role": "Chief Moderator", "full_name": "Chief Moderator", "is_moderator": True},
+    {"id_number": "HMOD001", "password": "hmod123", "role": "Head Moderator", "full_name": "Head Moderator", "is_moderator": True},
+    {"id_number": "MOD001", "password": "mod123", "role": "Moderator", "full_name": "Moderator", "is_moderator": True},
+    {"id_number": "USER001", "password": "user123", "role": "user", "full_name": "Test User"},
+]
 
 @app.get("/dev/create-owner")
 async def create_owner_dev():
-    try:
-        user = build_test_user("OWNER001", "owner123", "Project Owner", "Project Owner", ["owner", "admin"])
-        status = upsert_test_user(user)
-        return {"status": status, "login": "OWNER001 / owner123"}
-    except Exception as e:
-        return {"error": str(e)}
+    owner = next(u for u in TEST_USERS if u["id_number"] == "OWNER001")
+    doc = _make_full_user_doc(**owner)
+    await db.users.update_one({"id_number": owner["id_number"]}, {"$set": doc}, upsert=True)
+    return {"status": "owner created", "login": "OWNER001 / owner123"}
 
+@app.get("/dev/create-admin")
+async def create_admin_dev():
+    admin = next(u for u in TEST_USERS if u["id_number"] == "ADMIN001")
+    doc = _make_full_user_doc(**admin)
+    await db.users.update_one({"id_number": admin["id_number"]}, {"$set": doc}, upsert=True)
+    return {"status": "admin created", "login": "ADMIN001 / admin123"}
 
 @app.get("/dev/create-test-users")
 async def create_test_users_dev():
-    try:
-        accounts = [
-            ("ADMIN001", "admin123", "Administrator", "Administrator", ["admin"]),
-            ("OWNER001", "owner123", "Project Owner", "Project Owner", ["owner", "admin"]),
-            ("MGMT001", "management123", "Management", "Management", ["management"]),
-            ("CM001", "cm123", "Community Manager", "Community Manager", ["community_manager"]),
-            ("COS001", "cos123", "Chief of Staff", "Chief of Staff", ["chief_of_staff"]),
-            ("CA001", "ca123", "Chief Administrator", "Chief Administrator", ["chief_admin"]),
-            ("HA001", "ha123", "Head Administrator", "Head Administrator", ["head_admin"]),
-            ("ADMIN002", "admin2123", "Administrator", "Administrator", ["admin"]),
-            ("CMOD001", "cmod123", "Chief Moderator", "Chief Moderator", ["chief_moderator"]),
-            ("HMOD001", "hmod123", "Head Moderator", "Head Moderator", ["head_moderator"]),
-            ("MOD001", "mod123", "Moderator", "Moderator", ["moderator"]),
-            ("USER001", "user123", "Test User", "user", ["user"]),
-        ]
-        created = []
-        for id_number, password, full_name, role, badges in accounts:
-            user = build_test_user(id_number, password, full_name, role, badges)
-            status = upsert_test_user(user)
-            created.append({"id_number": id_number, "password": password, "role": role, "status": status})
-        return {"status": "test users ready", "accounts": created}
-    except Exception as e:
-        return {"error": str(e)}
+    results = []
+    for spec in TEST_USERS:
+        doc = _make_full_user_doc(**spec)
+        await db.users.update_one({"id_number": spec["id_number"]}, {"$set": doc}, upsert=True)
+        results.append({"id_number": spec["id_number"], "password": spec["password"], "role": spec["role"], "status": "upserted"})
+    return {"status": "test users ready", "accounts": results}
 
+# WebSocket connection manager
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
@@ -489,14 +489,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
-        user = normalize_user_document(user)
-        return User(**user)
+        normalized_user = _normalize_user_doc(user)
+        return User(**normalized_user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Invalid token handling failed: %s", e)
+        logger.exception(f"Invalid token/session state: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
 async def verify_admin(user: User = Depends(get_current_user)):
@@ -827,7 +827,6 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
     raise HTTPException(status_code=400, detail="Invalid action")
 
 # Login
-
 @api_router.post("/auth/login")
 async def login(login_request: UserLogin):
     user = await db.users.find_one({"id_number": login_request.id_number}, {"_id": 0})
@@ -836,37 +835,39 @@ async def login(login_request: UserLogin):
 
     password_hash = user.get('password_hash')
     if not password_hash:
-        raise HTTPException(status_code=500, detail="User missing password hash")
+        logger.error(f"User {login_request.id_number} is missing password_hash")
+        raise HTTPException(status_code=500, detail="Account data is corrupted")
 
     try:
-        valid_password = bcrypt.checkpw(
+        password_ok = bcrypt.checkpw(
             login_request.password.encode('utf-8'),
-            password_hash.encode('utf-8') if isinstance(password_hash, str) else password_hash,
+            password_hash.encode('utf-8')
         )
-    except Exception:
-        # Fallback for hashes generated through passlib
-        valid_password = pwd_context.verify(login_request.password, password_hash)
+    except Exception as e:
+        logger.exception(f"Password verification failed for {login_request.id_number}: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
-    if not valid_password:
+    if not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    user = normalize_user_document(user)
+    normalized_user = _normalize_user_doc(user)
 
-    # Persist any missing defaults so future reads do not crash
-    await db.users.update_one(
-        {"id_number": user["id_number"]},
-        {"$set": user},
-        upsert=True,
-    )
+    # Persist any missing defaults so future logins and token-based requests stay stable
+    missing_updates = {}
+    for key, value in normalized_user.items():
+        if key not in user or user.get(key) is None:
+            missing_updates[key] = value.isoformat() if isinstance(value, datetime) else value
+    if missing_updates:
+        await db.users.update_one({"id_number": login_request.id_number}, {"$set": missing_updates})
 
     token_payload = {
-        "user_id": user['user_id'],
-        "id_number": user['id_number'],
+        "user_id": normalized_user['user_id'],
+        "id_number": normalized_user['id_number'],
         "exp": datetime.now(timezone.utc) + timedelta(days=7)
     }
     token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-    user_data = User(**user)
+    user_data = User(**normalized_user)
     response_data = user_data.model_dump(exclude={'password_hash'})
 
     if user_data.is_banned:
@@ -876,6 +877,7 @@ async def login(login_request: UserLogin):
         "token": token,
         "user": response_data
     }
+
 
 # Get current user profile
 @api_router.get("/users/me")
