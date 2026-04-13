@@ -48,6 +48,16 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ===== DEV ONLY: CREATE ADMIN USER =====
+@app.get("/dev/create-admin")
+async def create_admin_dev():
+    try:
+        from scripts.create_admin import create_admin
+        create_admin()
+        return {"status": "admin created", "id": "ADMIN001", "password": "admin123"}
+    except Exception as e:
+        return {"error": str(e)}
+
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
