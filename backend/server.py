@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
+import re
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 import uuid
@@ -65,55 +66,62 @@ def _make_full_user_doc(
     is_ex_student: bool = False,
 ) -> Dict[str, Any]:
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    safe_name = full_name.strip() or id_number
+    safe_name = (full_name or id_number).strip()
     parts = safe_name.split()
     display_name = f"{parts[0]} {parts[-1]}" if len(parts) > 1 else safe_name
     email_local = re.sub(r"[^a-zA-Z0-9]+", "", id_number.lower()) or "user"
+
     role_badges = badges[:] if badges else []
-    if role and role.lower() not in [b.lower() for b in role_badges]:
+    lower_badges = [b.lower() for b in role_badges]
+
+    if role and role.lower() not in lower_badges:
         role_badges.append(role)
-    if is_admin and "admin" not in [b.lower() for b in role_badges]:
+        lower_badges.append(role.lower())
+
+    if is_admin and "admin" not in lower_badges:
         role_badges.append("admin")
 
-    doc = User(
-        id_number=id_number,
-        full_name=safe_name,
-        display_name=display_name,
-        date_of_birth="2000-01-01",
-        current_class=current_class,
-        section=section,
-        email=f"{email_local}@example.com",
-        phone_number=None,
-        is_ex_student=is_ex_student,
-        date_of_leaving="2024-01-01" if is_ex_student else None,
-        last_class="12" if is_ex_student else None,
-        current_status=current_status or ("alumni" if is_ex_student else "student"),
-        password_hash=password_hash,
-        profile_picture="",
-        banner_image="",
-        bio=f"{role} account for testing",
-        badges=role_badges,
-        role=role,
-        is_profile_public=True,
-        is_followers_public=True,
-        is_following_public=True,
-        is_friends_public=True,
-        is_admin=is_admin,
-        is_moderator=is_moderator,
-        is_banned=False,
-        is_muted=False,
-        ban_reason=None,
-        mute_until=None,
-        registration_status="approved",
-        push_notifications_enabled=True,
-        followers=[],
-        following=[],
-        friends=[],
-        friend_requests_sent=[],
-        friend_requests_received=[]
-    ).model_dump()
-    doc["created_at"] = doc["created_at"].isoformat()
-    return doc
+    now = datetime.now(timezone.utc)
+
+    return {
+        "user_id": str(uuid.uuid4()),
+        "id_number": id_number,
+        "full_name": safe_name,
+        "display_name": display_name,
+        "date_of_birth": "2000-01-01",
+        "current_class": current_class,
+        "section": section,
+        "email": f"{email_local}@example.com",
+        "phone_number": None,
+        "is_ex_student": is_ex_student,
+        "date_of_leaving": "2024-01-01" if is_ex_student else None,
+        "last_class": "12" if is_ex_student else None,
+        "current_status": current_status or ("alumni" if is_ex_student else "student"),
+        "password_hash": password_hash,
+        "profile_picture": "",
+        "banner_image": "",
+        "bio": f"{role} account for testing",
+        "badges": role_badges,
+        "role": role,
+        "is_profile_public": True,
+        "is_followers_public": True,
+        "is_following_public": True,
+        "is_friends_public": True,
+        "is_admin": is_admin,
+        "is_moderator": is_moderator,
+        "is_banned": False,
+        "is_muted": False,
+        "ban_reason": None,
+        "mute_until": None,
+        "registration_status": "approved",
+        "push_notifications_enabled": True,
+        "created_at": now.isoformat(),
+        "followers": [],
+        "following": [],
+        "friends": [],
+        "friend_requests_sent": [],
+        "friend_requests_received": []
+    }
 
 
 def _normalize_user_doc(user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -123,15 +131,23 @@ def _normalize_user_doc(user: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
     normalized = dict(user)
 
     normalized.setdefault("user_id", str(uuid.uuid4()))
+    normalized.setdefault("id_number", "UNKNOWN001")
     normalized.setdefault("full_name", normalized.get("display_name") or normalized.get("id_number", "User"))
-    normalized.setdefault("display_name", normalized.get("full_name"))
+    normalized.setdefault("display_name", normalized.get("full_name") or normalized.get("id_number", "User"))
     normalized.setdefault("date_of_birth", "2000-01-01")
     normalized.setdefault("current_class", "12")
     normalized.setdefault("section", "A")
-    normalized.setdefault("email", f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@example.com")
+
+    id_local = re.sub(
+        r"[^a-zA-Z0-9]+",
+        "",
+        str(normalized.get("id_number", "user")).lower()
+    ) or "user"
+
     email_value = normalized.get("email")
-    if not isinstance(email_value, str) or email_value.endswith(".test") or "@" not in email_value:
-        normalized["email"] = f"{re.sub(r'[^a-zA-Z0-9]+', '', str(normalized.get('id_number', 'user')).lower()) or 'user'}@example.com"
+    if not isinstance(email_value, str) or "@" not in email_value or email_value.endswith(".test"):
+        normalized["email"] = f"{id_local}@example.com"
+
     normalized.setdefault("phone_number", None)
     normalized.setdefault("is_ex_student", False)
     normalized.setdefault("date_of_leaving", None)
@@ -488,12 +504,26 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     try:
         token = credentials.credentials
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get('user_id')
+        user_id = payload.get("user_id")
+
         user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+
         normalized_user = _normalize_user_doc(user)
+
+        missing_updates = {}
+        for key, value in normalized_user.items():
+            original = user.get(key)
+            comparable = value.isoformat() if isinstance(value, datetime) else value
+            if original is None or key not in user:
+                missing_updates[key] = comparable
+
+        if missing_updates:
+            await db.users.update_one({"user_id": user_id}, {"$set": missing_updates})
+
         return User(**normalized_user)
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except HTTPException:
@@ -836,15 +866,15 @@ async def login(login_request: UserLogin):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    password_hash = user.get('password_hash')
+    password_hash = user.get("password_hash")
     if not password_hash:
         logger.error(f"User {login_request.id_number} is missing password_hash")
         raise HTTPException(status_code=500, detail="Account data is corrupted")
 
     try:
         password_ok = bcrypt.checkpw(
-            login_request.password.encode('utf-8'),
-            password_hash.encode('utf-8')
+            login_request.password.encode("utf-8"),
+            password_hash.encode("utf-8")
         )
     except Exception as e:
         logger.exception(f"Password verification failed for {login_request.id_number}: {e}")
@@ -855,26 +885,31 @@ async def login(login_request: UserLogin):
 
     normalized_user = _normalize_user_doc(user)
 
-    # Persist any missing defaults so future logins and token-based requests stay stable
     missing_updates = {}
     for key, value in normalized_user.items():
-        if key not in user or user.get(key) is None:
-            missing_updates[key] = value.isoformat() if isinstance(value, datetime) else value
+        original = user.get(key)
+        comparable = value.isoformat() if isinstance(value, datetime) else value
+        if original is None or key not in user:
+            missing_updates[key] = comparable
+
     if missing_updates:
-        await db.users.update_one({"id_number": login_request.id_number}, {"$set": missing_updates})
+        await db.users.update_one(
+            {"id_number": login_request.id_number},
+            {"$set": missing_updates}
+        )
 
     token_payload = {
-        "user_id": normalized_user['user_id'],
-        "id_number": normalized_user['id_number'],
+        "user_id": normalized_user["user_id"],
+        "id_number": normalized_user["id_number"],
         "exp": datetime.now(timezone.utc) + timedelta(days=7)
     }
     token = jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
     user_data = User(**normalized_user)
-    response_data = user_data.model_dump(exclude={'password_hash'})
+    response_data = user_data.model_dump(exclude={"password_hash"})
 
     if user_data.is_banned:
-        response_data['registration_status'] = 'banned'
+        response_data["registration_status"] = "banned"
 
     return {
         "token": token,
