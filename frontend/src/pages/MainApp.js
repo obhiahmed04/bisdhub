@@ -14,7 +14,7 @@ import {
   Phone, VideoCamera, Image
 } from '@phosphor-icons/react';
 import api from '../utils/api';
-import { API_BASE } from '../utils/api';
+import { API_BASE, WS_BASE, buildAssetUrl } from '../utils/api';
 import NotificationBell from '../components/NotificationBell';
 import CreatePostDialog from '../components/CreatePostDialog';
 import CommentSection from '../components/CommentSection';
@@ -102,7 +102,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   }, [searchQuery]);
 
   const connectWebSocket = () => {
-    const wsUrl = `${API_BASE.replace('https', 'wss').replace('http', 'ws')}/ws/${user.user_id}`;
+    const wsUrl = `${WS_BASE}/${user.user_id}`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
@@ -257,8 +257,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
     form.append('file', file);
     try {
       const res = await api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const backendUrl = process.env.REACT_APP_BACKEND_URL;
-      setDmAttachImages(prev => [...prev, `${backendUrl}${res.data.url}`]);
+      setDmAttachImages(prev => [...prev, buildAssetUrl(res.data.url)]);
     } catch (err) { toast.error('Upload failed'); }
     e.target.value = '';
   };
