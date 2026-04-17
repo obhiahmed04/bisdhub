@@ -1,364 +1,178 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
-import { ScrollArea } from '../components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { toast } from 'sonner';
-import { ArrowLeft, Heart, ChatCircle, PaperPlaneTilt, UserPlus, UserMinus } from '@phosphor-icons/react';
-import api from '../utils/api';
+import { ArrowLeft, Heart, ChatCircle, UserPlus, UserMinus, Lock } from '@phosphor-icons/react';
+import api, { buildAssetUrl, getPublicHandle } from '../utils/api';
 import EditProfileDialog from '../components/EditProfileDialog';
 import CommentSection from '../components/CommentSection';
-import ReportDialog from '../components/ReportDialog';
 
-const UserProfile = ({ currentUser, onLogout, updateUser }) => {
+const UserProfile = ({ currentUser, updateUser }) => {
   const { idNumber } = useParams();
+  const navigate = useNavigate();
   const [profileUser, setProfileUser] = useState(null);
   const [posts, setPosts] = useState([]);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [isFriend, setIsFriend] = useState(false);
-  const [friendRequestSent, setFriendRequestSent] = useState(false);
-  const [friendRequestReceived, setFriendRequestReceived] = useState(false);
   const [followers, setFollowers] = useState([]);
   const [following, setFollowing] = useState([]);
   const [showFollowers, setShowFollowers] = useState(false);
   const [showFollowing, setShowFollowing] = useState(false);
   const [expandedComments, setExpandedComments] = useState({});
-  const navigate = useNavigate();
+  const [tab, setTab] = useState('posts');
   const isOwnProfile = currentUser?.id_number === idNumber;
 
-  useEffect(() => {
-    loadProfile();
-    loadPosts();
-    loadFollowers();
-    loadFollowing();
-  }, [idNumber]);
+  useEffect(() => { loadAll(); }, [idNumber]);
 
-  const loadProfile = async () => {
+  const loadAll = async () => {
     try {
-      const response = await api.get(`/users/${idNumber}`);
-      setProfileUser(response.data);
-      setIsFollowing(response.data.followers?.includes(currentUser?.user_id));
-      setIsFriend(response.data.friends?.includes(currentUser?.user_id));
-      setFriendRequestSent(response.data.friend_requests_received?.includes(currentUser?.user_id));
-      
-      // Check if we received a friend request from this user
-      const meRes = await api.get('/users/me');
-      setFriendRequestReceived(meRes.data.friend_requests_received?.includes(response.data.user_id));
-    } catch (error) {
+      const [profileRes, postsRes] = await Promise.all([
+        api.get(`/users/${idNumber}`),
+        api.get(`/posts/user/${idNumber}`),
+      ]);
+      setProfileUser(profileRes.data);
+      setPosts(postsRes.data);
+      loadFollowers();
+      loadFollowing();
+    } catch (e) {
       toast.error('Failed to load profile');
     }
   };
 
-  const loadPosts = async () => {
-    try {
-      const response = await api.get(`/posts/user/${idNumber}`);
-      setPosts(response.data);
-    } catch (error) {
-      console.error('Failed to load posts');
-    }
-  };
+  const loadFollowers = async () => { try { const r = await api.get(`/users/${idNumber}/followers`); setFollowers(r.data); } catch { setFollowers([]); } };
+  const loadFollowing = async () => { try { const r = await api.get(`/users/${idNumber}/following`); setFollowing(r.data); } catch { setFollowing([]); } };
 
-  const loadFollowers = async () => {
-    try {
-      const response = await api.get(`/users/${idNumber}/followers`);
-      setFollowers(response.data);
-    } catch (error) {
-      setFollowers([]);
-    }
-  };
+  const isFollowing = useMemo(() => !!profileUser?.followers?.includes(currentUser?.user_id), [profileUser, currentUser]);
+  const isFriend = useMemo(() => !!profileUser?.friends?.includes(currentUser?.user_id), [profileUser, currentUser]);
+  const friendRequestReceived = useMemo(() => !!currentUser?.friend_requests_received?.includes(profileUser?.user_id), [currentUser, profileUser]);
+  const friendRequestSent = useMemo(() => !!profileUser?.friend_requests_received?.includes(currentUser?.user_id), [currentUser, profileUser]);
 
-  const loadFollowing = async () => {
-    try {
-      const response = await api.get(`/users/${idNumber}/following`);
-      setFollowing(response.data);
-    } catch (error) {
-      setFollowing([]);
-    }
-  };
-
-  const handleProfileUpdate = (updatedUser) => {
-    setProfileUser(updatedUser);
-    if (isOwnProfile && updateUser) updateUser(updatedUser);
-  };
+  const onProfileUpdated = (updated) => { setProfileUser(updated); updateUser?.(updated); };
 
   const toggleFollow = async () => {
     try {
-      if (isFollowing) {
-        await api.delete(`/users/${idNumber}/follow`);
-        toast.success('Unfollowed');
-      } else {
-        await api.post(`/users/${idNumber}/follow`);
-        toast.success('Followed');
-      }
-      setIsFollowing(!isFollowing);
-      loadProfile();
-    } catch (error) {
-      toast.error('Failed to update follow status');
-    }
+      if (isFollowing) await api.delete(`/users/${idNumber}/follow`);
+      else await api.post(`/users/${idNumber}/follow`);
+      await loadAll();
+      toast.success(isFollowing ? 'Unfollowed' : 'Followed');
+    } catch (e) { toast.error('Failed to update follow'); }
   };
 
-  const sendFriendRequest = async () => {
-    try {
-      await api.post(`/friends/request/${idNumber}`);
-      toast.success('Friend request sent!');
-      setFriendRequestSent(true);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to send friend request');
-    }
-  };
+  const sendFriendRequest = async () => { try { await api.post(`/friends/request/${idNumber}`); await loadAll(); toast.success('Friend request sent'); } catch (e) { toast.error(e.response?.data?.detail || 'Failed'); } };
+  const acceptFriendRequest = async () => { try { await api.post(`/friends/accept/${profileUser.user_id}`); await loadAll(); toast.success('Friend request accepted'); } catch { toast.error('Failed'); } };
+  const removeFriend = async () => { try { await api.delete(`/friends/${profileUser.user_id}`); await loadAll(); toast.success('Friend removed'); } catch { toast.error('Failed'); } };
+  const likePost = async (postId, isLiked) => { try { if (isLiked) await api.delete(`/posts/${postId}/like`); else await api.post(`/posts/${postId}/like`); loadAll(); } catch { toast.error('Failed'); } };
 
-  const acceptFriendRequest = async () => {
-    try {
-      await api.post(`/friends/accept/${profileUser.user_id}`);
-      toast.success('Friend request accepted!');
-      setIsFriend(true);
-      setFriendRequestReceived(false);
-    } catch (error) {
-      toast.error('Failed to accept friend request');
-    }
-  };
+  if (!profileUser) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
-  const removeFriend = async () => {
-    try {
-      await api.delete(`/friends/${profileUser.user_id}`);
-      toast.success('Friend removed');
-      setIsFriend(false);
-    } catch (error) {
-      toast.error('Failed to remove friend');
-    }
-  };
-
-  const likePost = async (postId, isLiked) => {
-    try {
-      if (isLiked) await api.delete(`/posts/${postId}/like`);
-      else await api.post(`/posts/${postId}/like`);
-      loadPosts();
-    } catch (error) {
-      toast.error('Failed to update like');
-    }
-  };
-
-  const startDM = () => {
-    navigate('/', { state: { startDM: profileUser } });
-  };
-
-  if (!profileUser) {
-    return (
-      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
-        <p className="text-lg font-medium">Loading...</p>
-      </div>
-    );
-  }
+  const visiblePosts = tab === 'reposts' ? posts.filter(p => p.repost_of) : posts.filter(p => !p.repost_of);
+  const handle = getPublicHandle(profileUser);
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7]">
-      <div className="max-w-3xl mx-auto">
-        <div className="p-4">
-          <Button data-testid="profile-back-button" onClick={() => navigate('/')}
-            className="bg-white text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl flex items-center gap-2 text-sm">
+    <div className="min-h-screen bg-[#FDFBF7] dark:bg-[#111111]">
+      <div className="max-w-3xl mx-auto pb-8">
+        <div className="p-3 sm:p-4">
+          <Button onClick={() => navigate('/')} className="bg-white text-[#111111] border-2 border-[#111111]">
             <ArrowLeft size={16} weight="bold" /> Back
           </Button>
         </div>
-
-        {/* Profile Header */}
-        <div className="bg-white border-2 border-[#111111] rounded-xl shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] mx-4 mb-4">
-          <div className="h-36 md:h-44 rounded-t-xl border-b-2 border-[#111111] bg-gradient-to-r from-blue-400 to-purple-500"
-            style={profileUser.banner_image ? {
-              backgroundImage: `url(${profileUser.banner_image})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center'
-            } : {}} />
-
+        <div className="mx-3 sm:mx-4 mb-4 bg-white dark:bg-[#171717] border-2 border-[#111111] rounded-2xl overflow-hidden shadow-[4px_4px_0px_0px_rgba(17,17,17,1)]">
+          <div className="h-32 sm:h-44 border-b-2 border-[#111111] bg-gradient-to-r from-blue-400 to-purple-500" style={profileUser.banner_image ? { backgroundImage: `url(${buildAssetUrl(profileUser.banner_image)})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}} />
           <div className="p-4">
-            <div className="flex flex-col md:flex-row md:items-start gap-3 mb-4">
-              <Avatar className="w-20 h-20 border-4 border-[#111111] -mt-14 bg-white" data-testid="profile-avatar">
-                <AvatarImage src={profileUser.profile_picture} />
-                <AvatarFallback className="text-2xl font-black">{profileUser.display_name?.[0]}</AvatarFallback>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Avatar className="w-20 h-20 border-4 border-[#111111] -mt-14 bg-white">
+                <AvatarImage src={buildAssetUrl(profileUser.profile_picture)} />
+                <AvatarFallback className="text-2xl font-black">{handle?.[0]?.toUpperCase()}</AvatarFallback>
               </Avatar>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <h1 className="text-xl md:text-2xl font-black break-words" style={{ fontFamily: 'Outfit, sans-serif' }} data-testid="profile-name">
-                    {profileUser.display_name}
-                  </h1>
-                  {profileUser.badges?.filter(b => b !== "Superior").map((badge, i) => (
-                    <span key={i} data-testid={`profile-badge-${i}`}
-                      className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-[#111111] bg-[#FF6B6B] text-white">
-                      {badge}
-                    </span>
-                  ))}
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black">@{handle}</h1>
+                  {profileUser.badges?.filter(b => b !== 'Superior').map((badge, i) => <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-bold border border-[#111111] bg-[#FF6B6B] text-white">{badge}</span>)}
+                  {profileUser.profile_locked && <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full border border-[#111111] bg-[#F5F5F5]"><Lock size={12} /> Private</span>}
                 </div>
-                <p className="text-sm text-[#4B4B4B]" data-testid="profile-id">@{profileUser.id_number}</p>
-                <p className="text-xs text-[#4B4B4B] mt-0.5" data-testid="profile-class">
-                  {profileUser.current_class} - {profileUser.section} {profileUser.is_ex_student && '(EX Student)'}
-                </p>
-
-                {/* Actions */}
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {isOwnProfile ? (
-                    <EditProfileDialog user={profileUser} onProfileUpdated={handleProfileUpdate} />
-                  ) : (
-                    <>
-                      <Button data-testid="profile-follow-button" onClick={toggleFollow}
-                        className={`border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm ${
-                          isFollowing ? 'bg-white text-[#111111]' : 'bg-[#2563EB] text-white'
-                        }`}>
-                        {isFollowing ? 'Unfollow' : 'Follow'}
-                      </Button>
-                      
-                      {isFriend ? (
-                        <Button onClick={removeFriend} data-testid="remove-friend-button"
-                          className="bg-[#FF6B6B] text-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-1.5">
-                          <UserMinus size={14} weight="bold" /> Unfriend
-                        </Button>
-                      ) : friendRequestReceived ? (
-                        <Button onClick={acceptFriendRequest} data-testid="accept-friend-button"
-                          className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-1.5">
-                          <UserPlus size={14} weight="bold" /> Accept Request
-                        </Button>
-                      ) : friendRequestSent ? (
-                        <Button disabled className="bg-gray-100 text-[#4B4B4B] border-2 border-[#D1D1D1] font-bold px-4 py-2 rounded-xl text-sm">
-                          Request Sent
-                        </Button>
-                      ) : (
-                        <Button onClick={sendFriendRequest} data-testid="send-friend-request-button"
-                          className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-1.5">
-                          <UserPlus size={14} weight="bold" /> Add Friend
-                        </Button>
-                      )}
-                      
-                      <Button onClick={startDM} data-testid="profile-dm-button"
-                        className="bg-white text-[#111111] border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] hover:translate-y-[2px] hover:translate-x-[2px] font-bold px-4 py-2 rounded-xl text-sm flex items-center gap-1.5">
-                        <PaperPlaneTilt size={14} weight="bold" /> Message
-                      </Button>
-                    </>
-                  )}
+                <p className="text-sm text-[#4B4B4B] mt-1">ID: {profileUser.id_number}</p>
+                <p className="text-sm text-[#4B4B4B]">{profileUser.full_name}</p>
+                {profileUser.bio ? <p className="text-sm mt-3">{profileUser.bio}</p> : null}
+                <div className="flex flex-wrap gap-4 mt-3 text-sm">
+                  <button onClick={() => setShowFollowers(true)}><span className="font-black">{followers.length}</span> Followers</button>
+                  <button onClick={() => setShowFollowing(true)}><span className="font-black">{following.length}</span> Following</button>
+                  <span><span className="font-black">{profileUser.friends?.length || 0}</span> Friends</span>
                 </div>
-              </div>
-            </div>
-
-            {profileUser.bio && (
-              <p className="text-sm mb-4 break-words" data-testid="profile-bio">{profileUser.bio}</p>
-            )}
-
-            <div className="flex gap-4">
-              <button onClick={() => setShowFollowers(true)} className="hover:underline">
-                <span className="font-black text-sm" data-testid="profile-followers-count">{profileUser.followers?.length || 0}</span>
-                <span className="text-[#4B4B4B] ml-1 text-sm">Followers</span>
-              </button>
-              <button onClick={() => setShowFollowing(true)} className="hover:underline">
-                <span className="font-black text-sm" data-testid="profile-following-count">{profileUser.following?.length || 0}</span>
-                <span className="text-[#4B4B4B] ml-1 text-sm">Following</span>
-              </button>
-              <div>
-                <span className="font-black text-sm">{profileUser.friends?.length || 0}</span>
-                <span className="text-[#4B4B4B] ml-1 text-sm">Friends</span>
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {isOwnProfile ? <EditProfileDialog user={profileUser} onProfileUpdated={onProfileUpdated} /> : (<>
+                    <Button onClick={toggleFollow} className={`${isFollowing ? 'bg-white text-[#111111]' : 'bg-[#2563EB] text-white'} border-2 border-[#111111]`}>{isFollowing ? 'Unfollow' : 'Follow'}</Button>
+                    {isFriend ? <Button onClick={removeFriend} className="bg-[#FF6B6B] text-white border-2 border-[#111111]"><UserMinus size={14} /> Unfriend</Button> : friendRequestReceived ? <Button onClick={acceptFriendRequest} className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111]"><UserPlus size={14} /> Accept Request</Button> : friendRequestSent ? <Button disabled className="bg-[#F5F5F5] text-[#4B4B4B] border-2 border-[#111111]">Request Sent</Button> : <Button onClick={sendFriendRequest} className="bg-[#A7F3D0] text-[#111111] border-2 border-[#111111]"><UserPlus size={14} /> Add Friend</Button>}
+                  </>)}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Followers Dialog */}
-        <Dialog open={showFollowers} onOpenChange={setShowFollowers}>
-          <DialogContent className="bg-white border-2 border-[#111111] shadow-[8px_8px_0px_0px_rgba(17,17,17,1)] rounded-xl max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-black" style={{ fontFamily: 'Outfit, sans-serif' }}>Followers ({followers.length})</DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="max-h-80">
-              <div className="space-y-2 p-2">
-                {followers.map((f) => (
-                  <div key={f.user_id} onClick={() => { navigate(`/profile/${f.id_number}`); setShowFollowers(false); }}
-                    className="flex items-center gap-3 p-2 rounded-xl border border-[#111111] hover:bg-[#A7F3D0] cursor-pointer">
-                    <Avatar className="w-8 h-8 border border-[#111111]">
-                      <AvatarImage src={f.profile_picture} />
-                      <AvatarFallback className="text-xs">{f.display_name?.[0]}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-bold text-sm">{f.display_name}</p>
-                      <p className="text-xs text-[#4B4B4B]">@{f.id_number}</p>
-                    </div>
-                  </div>
-                ))}
-                {followers.length === 0 && <p className="text-sm text-[#4B4B4B] text-center py-4">No followers yet</p>}
-              </div>
-            </ScrollArea>
-          </DialogContent>
-        </Dialog>
-
-        {/* Following Dialog */}
-        <Dialog open={showFollowing} onOpenChange={setShowFollowing}>
-          <DialogContent className="bg-white border-2 border-[#111111] shadow-[8px_8px_0px_0px_rgba(17,17,17,1)] rounded-xl max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-black" style={{ fontFamily: 'Outfit, sans-serif' }}>Following ({following.length})</DialogTitle>
-            </DialogHeader>
-            <ScrollArea className="max-h-80">
-              <div className="space-y-2 p-2">
-                {following.map((f) => (
-                  <div key={f.user_id} onClick={() => { navigate(`/profile/${f.id_number}`); setShowFollowing(false); }}
-                    className="flex items-center gap-3 p-2 rounded-xl border border-[#111111] hover:bg-[#A7F3D0] cursor-pointer">
-                    <Avatar className="w-8 h-8 border border-[#111111]">
-                      <AvatarImage src={f.profile_picture} />
-                      <AvatarFallback className="text-xs">{f.display_name?.[0]}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-bold text-sm">{f.display_name}</p>
-                      <p className="text-xs text-[#4B4B4B]">@{f.id_number}</p>
-                    </div>
-                  </div>
-                ))}
-                {following.length === 0 && <p className="text-sm text-[#4B4B4B] text-center py-4">Not following anyone yet</p>}
-              </div>
-            </ScrollArea>
-          </DialogContent>
-        </Dialog>
-
-        {/* Posts */}
-        <div className="px-4 pb-6">
-          <h2 className="text-lg font-black mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Posts</h2>
-          <div className="space-y-4">
-            {posts.map((post) => (
-              <div key={post.post_id} data-testid={`profile-post-${post.post_id}`}
-                className="bg-white border-2 border-[#111111] shadow-[4px_4px_0px_0px_rgba(17,17,17,1)] rounded-xl p-4">
-                {post.serial_number && <p className="text-[10px] text-[#4B4B4B] mb-1">#{post.serial_number}</p>}
-                <p className="text-sm mb-3 whitespace-pre-wrap">{post.content}</p>
-                {post.images?.length > 0 && (
-                  <div className={`grid gap-2 mb-3 ${post.images.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
-                    {post.images.map((img, i) => (
-                      <img key={i} src={img} alt="" className="w-full rounded-lg border-2 border-[#111111] object-cover max-h-64" />
-                    ))}
-                  </div>
-                )}
-                <div className="flex gap-4 text-sm">
-                  <button onClick={() => likePost(post.post_id, post.likes?.includes(currentUser?.user_id))}
-                    className={`flex items-center gap-1.5 font-medium ${post.likes?.includes(currentUser?.user_id) ? 'text-[#FF6B6B]' : 'text-[#4B4B4B] hover:text-[#FF6B6B]'}`}>
-                    <Heart size={18} weight={post.likes?.includes(currentUser?.user_id) ? 'fill' : 'bold'} />
-                    {post.likes?.length || 0}
-                  </button>
-                  <button onClick={() => setExpandedComments({...expandedComments, [post.post_id]: !expandedComments[post.post_id]})}
-                    className="flex items-center gap-1.5 text-[#4B4B4B] hover:text-[#2563EB] font-medium">
-                    <ChatCircle size={18} weight="bold" />
-                    {post.comments?.length || 0}
-                  </button>
-                  {post.user_id !== currentUser?.user_id && (
-                    <ReportDialog postId={post.post_id} onReported={loadPosts} />
-                  )}
-                </div>
-                {expandedComments[post.post_id] && (
-                  <CommentSection post={post} user={currentUser} />
-                )}
-              </div>
-            ))}
-            {posts.length === 0 && (
-              <div className="text-center py-12">
-                <p className="text-[#4B4B4B]">No posts yet</p>
-              </div>
-            )}
+        {profileUser.profile_locked ? (
+          <div className="mx-3 sm:mx-4 bg-white dark:bg-[#171717] border-2 border-[#111111] rounded-2xl p-6 text-center shadow-[4px_4px_0px_0px_rgba(17,17,17,1)]">
+            <Lock size={32} className="mx-auto mb-3" />
+            <h2 className="font-black text-lg mb-2">This profile is private</h2>
+            <p className="text-sm text-[#4B4B4B]">You can view the profile header, but posts and lists stay locked until they follow you back or accept you.</p>
           </div>
-        </div>
+        ) : (
+          <div className="mx-3 sm:mx-4">
+            <Tabs value={tab} onValueChange={setTab} className="mb-4">
+              <TabsList className="bg-white border-2 border-[#111111] rounded-xl p-1">
+                <TabsTrigger value="posts">Posts</TabsTrigger>
+                <TabsTrigger value="reposts">Reposts</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="space-y-4">
+              {visiblePosts.map((post) => (
+                <div key={post.post_id} className="bg-white dark:bg-[#171717] border-2 border-[#111111] rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(17,17,17,1)]">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="w-10 h-10 border-2 border-[#111111]"><AvatarImage src={buildAssetUrl(post.user?.profile_picture)} /><AvatarFallback>{(post.user?.username || post.user?.display_name || 'U')[0]}</AvatarFallback></Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold">@{post.user?.username || post.user?.display_name}</span>
+                        <span className="text-xs text-[#4B4B4B]">· {post.user?.id_number}</span>
+                      </div>
+                      {post.repost_of ? <p className="text-[11px] text-[#4B4B4B] mt-1">↻ Repost</p> : null}
+                      <p className="mt-3 text-sm whitespace-pre-wrap break-words">{post.content}</p>
+                      {post.images?.length > 0 ? <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">{post.images.map((img, i) => <img key={i} src={buildAssetUrl(img)} alt="" className="w-full max-h-72 object-cover rounded-xl border-2 border-[#111111]" />)}</div> : null}
+                      <div className="flex gap-4 mt-4 text-sm">
+                        <button onClick={() => likePost(post.post_id, post.likes?.includes(currentUser?.user_id))} className="flex items-center gap-1"><Heart size={16} weight={post.likes?.includes(currentUser?.user_id) ? 'fill' : 'bold'} /> {post.likes?.length || 0}</button>
+                        <button onClick={() => setExpandedComments(prev => ({ ...prev, [post.post_id]: !prev[post.post_id] }))} className="flex items-center gap-1"><ChatCircle size={16} weight="bold" /> {post.comments?.length || 0}</button>
+                      </div>
+                      {expandedComments[post.post_id] ? <div className="mt-3"><CommentSection post={post} user={currentUser} /></div> : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!visiblePosts.length ? <div className="bg-white dark:bg-[#171717] border-2 border-[#111111] rounded-2xl p-6 text-center">No {tab} yet.</div> : null}
+            </div>
+          </div>
+        )}
+
+        <SimpleListDialog open={showFollowers} setOpen={setShowFollowers} title="Followers" items={followers} />
+        <SimpleListDialog open={showFollowing} setOpen={setShowFollowing} title="Following" items={following} />
       </div>
     </div>
   );
 };
+
+const SimpleListDialog = ({ open, setOpen, title, items }) => (
+  <Dialog open={open} onOpenChange={setOpen}>
+    <DialogContent className="bg-white border-2 border-[#111111] rounded-xl">
+      <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+      <div className="max-h-[60vh] overflow-auto space-y-2">
+        {items.map((item) => (
+          <div key={item.user_id} className="flex items-center gap-3 p-2 rounded-xl border border-[#D1D1D1]">
+            <Avatar className="w-10 h-10 border border-[#111111]"><AvatarImage src={buildAssetUrl(item.profile_picture)} /><AvatarFallback>{(item.username || item.display_name || 'U')[0]}</AvatarFallback></Avatar>
+            <div><p className="font-bold text-sm">@{item.username || item.display_name}</p><p className="text-xs text-[#4B4B4B]">{item.id_number}</p></div>
+          </div>
+        ))}
+        {!items.length ? <p className="text-sm text-[#4B4B4B]">Nothing to show.</p> : null}
+      </div>
+    </DialogContent>
+  </Dialog>
+);
 
 export default UserProfile;

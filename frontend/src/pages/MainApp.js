@@ -13,8 +13,7 @@ import {
   UsersThree, ArrowBendUpLeft, Smiley, WarningCircle, Trash,
   Phone, VideoCamera, Image
 } from '@phosphor-icons/react';
-import api from '../utils/api';
-import { API_BASE, WS_BASE, buildAssetUrl } from '../utils/api';
+import api, { API_BASE, buildAssetUrl, getPublicHandle, resolveWsUrl } from '../utils/api';
 import NotificationBell from '../components/NotificationBell';
 import CreatePostDialog from '../components/CreatePostDialog';
 import CommentSection from '../components/CommentSection';
@@ -102,7 +101,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
   }, [searchQuery]);
 
   const connectWebSocket = () => {
-    const wsUrl = `${WS_BASE}/${user.user_id}`;
+    const wsUrl = resolveWsUrl(user.user_id);
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
 
@@ -523,14 +522,14 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                       <div className="flex items-start gap-3 mb-3">
                         <Avatar className="border-2 border-[#111111] cursor-pointer hover:opacity-80 w-10 h-10"
                           onClick={() => navigate(`/profile/${post.user?.id_number}`)}>
-                          <AvatarImage src={post.user?.profile_picture} />
-                          <AvatarFallback>{post.user?.display_name?.[0]}</AvatarFallback>
+                          <AvatarImage src={buildAssetUrl(post.user?.profile_picture)} />
+                          <AvatarFallback>{getPublicHandle(post.user)?.[0]?.toUpperCase()}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="font-bold text-sm cursor-pointer hover:underline"
                               onClick={() => navigate(`/profile/${post.user?.id_number}`)}>
-                              {post.user?.display_name}
+                              @{getPublicHandle(post.user)}
                             </span>
                             {post.user?.badges?.filter(b => b !== "Superior").map((badge, i) => (
                               <span key={i} className="px-1.5 py-0.5 rounded-full text-[10px] font-bold border border-[#111111] bg-[#FF6B6B] text-white">
@@ -543,7 +542,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           </div>
                           <p className="text-xs cursor-pointer hover:underline" style={{ color: 'var(--text-3)' }}
                             onClick={() => navigate(`/profile/${post.user?.id_number}`)}>
-                            @{post.user?.id_number} &middot; {formatTime(post.created_at)}
+                            {post.user?.id_number} &middot; {formatTime(post.created_at)}
                           </p>
                         </div>
                       </div>
@@ -553,7 +552,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                       {/* Voice Note */}
                       {post.voice_url && (
                         <div className="mb-3 bg-[#F5F5F5] border-2 border-[#111111] rounded-xl px-3 py-2">
-                          <VoicePlayer src={`${API_BASE}${post.voice_url}`} />
+                          <VoicePlayer src={buildAssetUrl(post.voice_url)} />
                         </div>
                       )}
                       
@@ -589,13 +588,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           <Copy size={18} weight="bold" />
                           <span className="hidden sm:inline">Share</span>
                         </button>
-                        {post.user_id !== user.user_id && (
-                          <button onClick={() => startDMWithUser(post.user)}
-                            className="flex items-center gap-1.5 text-[#4B4B4B] hover:text-[#2563EB] font-medium">
-                            <PaperPlaneTilt size={18} weight="bold" />
-                            <span className="hidden sm:inline">DM</span>
-                          </button>
-                        )}
+                        
                         {post.user_id !== user.user_id && (
                           <ReportDialog postId={post.post_id} postSerial={post.serial_number} onReported={loadFeed} />
                         )}
@@ -653,12 +646,13 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                           <div key={u.user_id} data-testid={`quick-search-user-${u.user_id}`} onClick={() => { navigate(`/profile/${u.id_number}`); setSearchQuery(''); }}
                             className="flex items-center gap-2 p-2 rounded-lg border border-[#111111] hover:bg-[#A7F3D0] cursor-pointer transition-colors">
                             <Avatar className="w-8 h-8 border border-[#111111]">
-                              <AvatarImage src={u.profile_picture} />
-                              <AvatarFallback className="text-xs">{u.display_name?.[0]}</AvatarFallback>
+                              <AvatarImage src={buildAssetUrl(u.profile_picture)} />
+                              <AvatarFallback className="text-xs">{getPublicHandle(u)?.[0]?.toUpperCase()}</AvatarFallback>
                             </Avatar>
                             <div className="min-w-0 flex-1">
-                              <p className="text-sm font-bold truncate">{u.display_name}</p>
-                              <p className="text-[10px] text-[#4B4B4B]">@{u.id_number}</p>
+                              <p className="text-sm font-bold truncate">@{getPublicHandle(u)}</p>
+                              <p className="text-[10px] text-[#4B4B4B]">{u.id_number}</p>
+                              <p className="text-[10px] text-[#6B7280] truncate">{u.full_name}</p>
                             </div>
                           </div>
                         ))}
@@ -672,7 +666,7 @@ const MainApp = ({ user, onLogout, updateUser }) => {
                       <div className="space-y-1.5">
                         {searchResults.posts.slice(0, 3).map((p) => (
                           <div key={p.post_id} className="p-2 rounded-lg border border-[#111111]">
-                            <p className="font-bold text-xs">{p.user?.display_name}</p>
+                            <p className="font-bold text-xs">@{getPublicHandle(p.user)}</p>
                             <p className="text-xs truncate text-[#4B4B4B]">{p.content}</p>
                           </div>
                         ))}
