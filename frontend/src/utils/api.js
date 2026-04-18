@@ -1,37 +1,28 @@
-import axios from "axios";
 
-export const BACKEND_URL =
-  process.env.REACT_APP_BACKEND_URL ||
-  process.env.REACT_APP_API_URL ||
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://bisdhub-backend-staging.onrender.com";
+import axios from 'axios';
 
+const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || process.env.REACT_APP_API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://bisdhub-backend-staging.onrender.com';
+const BACKEND_URL = RAW_BACKEND.replace(/\/$/, '');
 export const API_BASE = `${BACKEND_URL}/api`;
-
-export const buildAssetUrl = (url) => {
-  if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  return `${BACKEND_URL}${url.startsWith("/") ? url : `/${url}`}`;
-};
-
-export const resolveWsUrl = (userId) => {
-  const base = BACKEND_URL.replace(/^http/, (m) => (m === "https" ? "wss" : "ws"));
-  return `${base}/api/ws/${userId}`;
-};
-
-export const getPublicHandle = (user) => user?.username || user?.display_name || user?.id_number || "user";
-export const getPublicLabel = (user) => `@${getPublicHandle(user)} · ${user?.id_number || ""}`.trim();
+export const WS_BASE = (process.env.REACT_APP_WS_URL || `${BACKEND_URL.replace(/^http/, 'ws')}/api/ws`).replace(/\/$/, '');
 
 export const api = axios.create({
   baseURL: API_BASE,
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+export const resolveAssetUrl = (url) => {
+  if (!url) return '';
+  if (/^https?:\/\//.test(url)) return url;
+  return `${BACKEND_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+};
+
+export const getPublicName = (entity) => entity?.username ? `@${entity.username}` : (entity?.display_name || entity?.full_name || entity?.id_number || 'User');
+export const getSecondaryIdentity = (entity) => entity?.username ? `${entity.id_number}` : '';
 
 export default api;
