@@ -50,13 +50,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _slug_username(value: str) -> str:
-    raw = re.sub(r"[^a-zA-Z0-9_]+", "", str(value or "").strip().lower().replace(" ", "_"))
-    raw = raw[:20]
-    return raw or "user"
-
-
-
 # Dev/test user helpers
 def _make_full_user_doc(
     id_number: str,
@@ -93,7 +86,6 @@ def _make_full_user_doc(
     return {
         "user_id": str(uuid.uuid4()),
         "id_number": id_number,
-        "username": _slug_username(id_number),
         "full_name": safe_name,
         "display_name": display_name,
         "date_of_birth": "2000-01-01",
@@ -140,9 +132,8 @@ def _normalize_user_doc(user: Optional[Dict[str, Any]]) -> Optional[Dict[str, An
 
     normalized.setdefault("user_id", str(uuid.uuid4()))
     normalized.setdefault("id_number", "UNKNOWN001")
-    normalized.setdefault("username", _slug_username(normalized.get("username") or normalized.get("id_number", "user")))
     normalized.setdefault("full_name", normalized.get("display_name") or normalized.get("id_number", "User"))
-    normalized.setdefault("display_name", normalized.get("username") or normalized.get("full_name") or normalized.get("id_number", "User"))
+    normalized.setdefault("display_name", normalized.get("full_name") or normalized.get("id_number", "User"))
     normalized.setdefault("date_of_birth", "2000-01-01")
     normalized.setdefault("current_class", "12")
     normalized.setdefault("section", "A")
@@ -285,7 +276,6 @@ class RegistrationRequest(BaseModel):
     section: str  # B1, B2, G1, G2
     email: EmailStr
     phone_number: Optional[str] = None
-    username: Optional[str] = None
     is_ex_student: bool
     date_of_leaving: Optional[str] = None  # ISO date for ex-students
     last_class: Optional[str] = None  # Last class at BISD
@@ -302,7 +292,6 @@ class Registration(BaseModel):
     section: str
     email: EmailStr
     phone_number: Optional[str] = None
-    username: Optional[str] = None
     is_ex_student: bool
     date_of_leaving: Optional[str] = None
     last_class: Optional[str] = None
@@ -326,7 +315,7 @@ class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     id_number: str
-    username: str
+    username: Optional[str] = None
     full_name: str
     display_name: str
     date_of_birth: str
@@ -334,7 +323,6 @@ class User(BaseModel):
     section: str
     email: EmailStr
     phone_number: Optional[str] = None
-    username: Optional[str] = None
     is_ex_student: bool
     date_of_leaving: Optional[str] = None
     last_class: Optional[str] = None
@@ -474,47 +462,6 @@ class HelpChatMessage(BaseModel):
     sender_type: str  # user or admin
     sender_id: str
     content: str
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class SupportTicketCreate(BaseModel):
-    registration_id: str
-    sender_id: str
-    subject: str
-    category: str = "general"
-    message: str
-
-class SupportTicketReply(BaseModel):
-    sender_id: str
-    sender_type: str = "user"
-    message: str
-
-class SupportTicketUpdate(BaseModel):
-    status: Optional[str] = None
-    priority: Optional[str] = None
-    assigned_admin_id: Optional[str] = None
-
-class SupportTicket(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    ticket_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    ticket_number: str
-    registration_id: str
-    sender_id: str
-    subject: str
-    category: str = "general"
-    status: str = "open"
-    priority: str = "normal"
-    assigned_admin_id: Optional[str] = None
-    last_message_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class SupportTicketMessage(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    ticket_message_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    ticket_id: str
-    sender_id: str
-    sender_type: str = "user"
-    message: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PasswordResetRequest(BaseModel):
@@ -792,25 +739,20 @@ async def verify_otp(request: OTPVerification):
 # Registration
 @api_router.post("/auth/register")
 async def register(reg_request: RegistrationRequest):
+    # Check if ID already exists
     existing = await db.registrations.find_one({"id_number": reg_request.id_number}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="ID number already registered")
-
+    
     existing_user = await db.users.find_one({"id_number": reg_request.id_number}, {"_id": 0})
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
-
-    requested_username = _slug_username(reg_request.username or reg_request.id_number)
-    username_exists = await db.users.find_one({"username": requested_username}, {"_id": 0})
-    if username_exists:
-        raise HTTPException(status_code=400, detail="Username already taken")
-
+    
+    # Get next serial number
     last_reg = await db.registrations.find_one({}, {"_id": 0, "serial_number": 1}, sort=[("serial_number", -1)])
     next_serial = (last_reg.get('serial_number', 0) + 1) if last_reg else 1
-
-    payload = reg_request.model_dump()
-    payload["username"] = requested_username
-    registration = Registration(**payload)
+    
+    registration = Registration(**reg_request.model_dump())
     registration.serial_number = next_serial
     registration.editable_until = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
     
@@ -851,9 +793,9 @@ async def admin_action_registration(action: AdminAction, admin: User = Depends(v
         
         user = User(
             id_number=registration['id_number'],
-            username=_slug_username(registration.get('username') or registration['id_number']),
+            username=(re.sub(r"[^a-zA-Z0-9_]+", "", registration['id_number'].lower()) or 'user')[:24],
             full_name=registration['full_name'],
-            display_name=registration.get('username') or registration['full_name'].split()[0] + " " + registration['full_name'].split()[-1],
+            display_name=registration['full_name'].split()[0] + " " + registration['full_name'].split()[-1],
             date_of_birth=registration['date_of_birth'],
             current_class=registration['current_class'],
             section=registration['section'],
@@ -987,24 +929,24 @@ async def get_my_profile(user: User = Depends(get_current_user)):
 @api_router.put("/users/me")
 async def update_profile(update: ProfileUpdate, user: User = Depends(get_current_user)):
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
-
-    requested_username = update_data.pop("username", None)
-    if requested_username is not None:
-        requested_username = _slug_username(requested_username)
-        existing_username = await db.users.find_one({"username": requested_username, "user_id": {"$ne": user.user_id}}, {"_id": 0})
-        if existing_username:
-            raise HTTPException(status_code=400, detail="Username already taken")
-        update_data["username"] = requested_username
-        update_data["display_name"] = requested_username
-
+    # Never allow real name changes via self-service
+    update_data.pop('display_name', None)
     update_data.pop('full_name', None)
-
+    if 'username' in update_data:
+        username = re.sub(r'[^a-zA-Z0-9_]+', '', update_data['username'].lower())[:24]
+        if not username:
+            raise HTTPException(status_code=400, detail='Invalid username')
+        existing_user = await db.users.find_one({"username": username, "user_id": {"$ne": user.user_id}}, {"_id": 0})
+        if existing_user:
+            raise HTTPException(status_code=400, detail='Username already taken')
+        update_data['username'] = username
+    
     if update_data:
         await db.users.update_one(
             {"user_id": user.user_id},
             {"$set": update_data}
         )
-
+    
     updated_user = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
     return User(**_normalize_user_doc(updated_user)).model_dump(exclude={'password_hash'})
 
@@ -1014,6 +956,7 @@ async def search_users(
     query: str = Query(..., min_length=1),
     user: User = Depends(get_current_user)
 ):
+    # Search by name, ID, class, or section
     users = await db.users.find({
         "$or": [
             {"full_name": {"$regex": query, "$options": "i"}},
@@ -1024,42 +967,32 @@ async def search_users(
             {"section": {"$regex": query, "$options": "i"}}
         ]
     }, {"_id": 0}).to_list(50)
-
+    
+    # Filter out private profiles
     results = []
     for u in users:
         user_obj = User(**_normalize_user_doc(u))
-        is_visible = user_obj.is_profile_public or user_obj.user_id == user.user_id
-        payload = user_obj.model_dump(exclude={'password_hash'})
-        if not is_visible:
-            payload['bio'] = ''
-        results.append(payload)
-
+        if user_obj.is_profile_public or user_obj.user_id == user.user_id:
+            results.append(user_obj.model_dump(exclude={'password_hash'}))
+    
     return results
 
 # Get user profile by ID number
+
 @api_router.get("/users/{id_number}")
 async def get_user_profile(id_number: str, user: User = Depends(get_current_user)):
     target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user_obj = User(**_normalize_user_doc(target_user))
-    is_owner = user_obj.user_id == user.user_id
-    can_view_private_content = is_owner or user.user_id in (user_obj.followers or []) or user.user_id in (user_obj.friends or [])
-    profile_locked = (not user_obj.is_profile_public) and not can_view_private_content
+    normalized_target = _normalize_user_doc(target_user)
+    user_obj = User(**normalized_target)
+    can_view_full = user_obj.is_profile_public or user_obj.user_id == user.user_id or user.user_id in user_obj.followers or user.user_id in user_obj.friends
 
     payload = user_obj.model_dump(exclude={'password_hash'})
-    payload['profile_locked'] = profile_locked
-    payload['can_view_private_content'] = can_view_private_content
-
-    if profile_locked:
-        payload['bio'] = user_obj.bio or ''
-        payload['followers'] = []
-        payload['following'] = []
-        payload['friends'] = []
-        payload['friend_requests_sent'] = []
-        payload['friend_requests_received'] = []
-
+    payload['profile_locked'] = not can_view_full
+    if not can_view_full:
+        payload['bio'] = ''
     return payload
 
 # Follow/Unfollow user
@@ -1349,15 +1282,13 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
     target_user = await db.users.find_one({"id_number": id_number}, {"_id": 0})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    is_owner = target_user['user_id'] == user.user_id
-    can_view_private_content = is_owner or user.user_id in target_user.get('followers', []) or user.user_id in target_user.get('friends', [])
-    if not target_user.get('is_profile_public', True) and not can_view_private_content:
-        return []
-
-    if is_owner:
+    
+    # Show all posts if viewing own profile, otherwise filter visibility
+    if target_user['user_id'] == user.user_id:
         posts = await db.posts.find({"user_id": target_user['user_id']}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     else:
+        if not target_user.get('is_profile_public', True) and user.user_id not in target_user.get('followers', []) and user.user_id not in target_user.get('friends', []):
+            return []
         allowed_vis = ["public", "official"]
         if user.user_id in target_user.get('friends', []):
             allowed_vis.append("friends_only")
@@ -1365,21 +1296,19 @@ async def get_user_posts(id_number: str, user: User = Depends(get_current_user),
             "user_id": target_user['user_id'],
             "visibility": {"$in": allowed_vis}
         }, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-
+    
     for post in posts:
         if isinstance(post.get('created_at'), str):
             post['created_at'] = datetime.fromisoformat(post['created_at'])
         post['user'] = {
             "user_id": target_user['user_id'],
-            "display_name": target_user.get('display_name') or target_user.get('username') or target_user['id_number'],
-            "username": target_user.get('username') or _slug_username(target_user['id_number']),
-            "full_name": target_user.get('full_name'),
+            "display_name": target_user['display_name'],
             "id_number": target_user['id_number'],
             "profile_picture": target_user.get('profile_picture'),
-            "badges": [b for b in target_user.get('badges', []) if b != "Superior"],
+            "badges": [b for b in target_user.get('badges', []) if b != "Superior"],  # Filter out Superior badge
             "role": target_user.get('role')
         }
-
+    
     return posts
 
 @api_router.post("/posts/{post_id}/like")
@@ -1992,73 +1921,6 @@ async def get_all_help_chats(admin: User = Depends(verify_admin)):
     return result
 
 # WebSocket for real-time chat
-
-@api_router.post("/tickets")
-async def create_ticket(ticket: SupportTicketCreate):
-    last_ticket = await db.support_tickets.find_one({}, {"ticket_number": 1, "_id": 0}, sort=[("created_at", -1)])
-    next_number = 1
-    if last_ticket and isinstance(last_ticket.get("ticket_number"), str) and last_ticket["ticket_number"].startswith("TKT-"):
-        try:
-            next_number = int(last_ticket["ticket_number"].split("-")[-1]) + 1
-        except Exception:
-            next_number = 1
-    ticket_number = f"TKT-{next_number:04d}"
-    ticket_obj = SupportTicket(
-        ticket_number=ticket_number,
-        registration_id=ticket.registration_id,
-        sender_id=ticket.sender_id,
-        subject=ticket.subject,
-        category=ticket.category,
-    )
-    ticket_doc = ticket_obj.model_dump()
-    ticket_doc["created_at"] = ticket_doc["created_at"].isoformat()
-    ticket_doc["last_message_at"] = ticket_doc["last_message_at"].isoformat()
-    await db.support_tickets.insert_one(ticket_doc)
-
-    first_message = SupportTicketMessage(ticket_id=ticket_obj.ticket_id, sender_id=ticket.sender_id, sender_type="user", message=ticket.message)
-    first_doc = first_message.model_dump()
-    first_doc["created_at"] = first_doc["created_at"].isoformat()
-    await db.support_ticket_messages.insert_one(first_doc)
-    return {"status": "success", "ticket": ticket_doc}
-
-@api_router.get("/tickets/by-registration/{registration_id}")
-async def get_tickets_by_registration(registration_id: str):
-    tickets = await db.support_tickets.find({"registration_id": registration_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    return tickets
-
-@api_router.get("/tickets/{ticket_id}/messages")
-async def get_ticket_messages(ticket_id: str):
-    messages = await db.support_ticket_messages.find({"ticket_id": ticket_id}, {"_id": 0}).sort("created_at", 1).to_list(200)
-    return messages
-
-@api_router.post("/tickets/{ticket_id}/messages")
-async def add_ticket_message(ticket_id: str, reply: SupportTicketReply):
-    ticket = await db.support_tickets.find_one({"ticket_id": ticket_id}, {"_id": 0})
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    msg = SupportTicketMessage(ticket_id=ticket_id, sender_id=reply.sender_id, sender_type=reply.sender_type, message=reply.message)
-    msg_doc = msg.model_dump()
-    msg_doc["created_at"] = msg_doc["created_at"].isoformat()
-    await db.support_ticket_messages.insert_one(msg_doc)
-    await db.support_tickets.update_one({"ticket_id": ticket_id}, {"$set": {"last_message_at": datetime.now(timezone.utc).isoformat()}})
-    return {"status": "success", "message": msg_doc}
-
-@api_router.get("/admin/tickets")
-async def get_admin_tickets(admin: User = Depends(verify_admin), status: Optional[str] = None):
-    query = {}
-    if status:
-        query["status"] = status
-    tickets = await db.support_tickets.find(query, {"_id": 0}).sort("last_message_at", -1).to_list(200)
-    return tickets
-
-@api_router.patch("/admin/tickets/{ticket_id}")
-async def update_ticket(ticket_id: str, update: SupportTicketUpdate, admin: User = Depends(verify_admin)):
-    update_data = {k:v for k,v in update.model_dump().items() if v is not None}
-    if not update_data:
-        return {"status": "success"}
-    await db.support_tickets.update_one({"ticket_id": ticket_id}, {"$set": update_data})
-    return {"status": "success"}
-
 @app.websocket("/api/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(user_id, websocket)
